@@ -34,7 +34,7 @@ type Props = {
 
 /** Connections hosts the same provider step as agent setup, with its own save intent. */
 export function AiConnectionCredentialStep(props: Props) {
-  if (props.provider === "openrouter" || props.provider === "google") return <ApiKeyConnectionStep {...props} />;
+  if (props.provider === "openrouter" || props.provider === "google" || props.provider === "deepseek") return <ApiKeyConnectionStep {...props} />;
   return <SubscriptionConnectionStep {...props} />;
 }
 

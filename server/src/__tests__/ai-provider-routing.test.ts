@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   aiProviderRoutingSchema,
+  aiRoutingBaseUrl,
   createAiConnectionSchema,
   isAiConnectionCompatible,
 } from "@paperclipai/shared";
@@ -148,5 +149,52 @@ describe("provider routing", () => {
     });
     expect(aiProviderRoutingSchema.safeParse({ ...routing, auth: "aws_credentials" }).success).toBe(false);
     for (const key of ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]) expect(projected.env).not.toHaveProperty(key);
+  });
+  it("rejects DeepSeek routing with a caller URL, region, or non-bearer auth", () => {
+    expect(aiProviderRoutingSchema.safeParse({ kind: "deepseek", protocol: "chat", baseUrl: "https://evil.example" }).success).toBe(false);
+    expect(aiProviderRoutingSchema.safeParse({ kind: "deepseek", protocol: "chat", auth: "none" }).success).toBe(false);
+    expect(aiProviderRoutingSchema.safeParse({ kind: "deepseek", protocol: "bedrock", auth: "bearer" }).success).toBe(false);
+    expect(aiProviderRoutingSchema.safeParse({ kind: "deepseek", protocol: "messages", auth: "bearer", models: [] }).success).toBe(true);
+  });
+  it("resolves the DeepSeek endpoint per protocol", () => {
+    const messages = aiProviderRoutingSchema.parse({ kind: "deepseek", protocol: "messages", auth: "bearer", models: [] });
+    const chat = aiProviderRoutingSchema.parse({ kind: "deepseek", protocol: "chat", auth: "bearer", models: [] });
+    expect(aiRoutingBaseUrl(chat, "opencode_local")).toBe("https://api.deepseek.com");
+    expect(aiRoutingBaseUrl(messages, "claude_local")).toBe("https://api.deepseek.com/anthropic");
+  });
+  it("projects DeepSeek to each harness without leaking a caller URL", () => {
+    const chat = aiProviderRoutingSchema.parse({ kind: "deepseek", protocol: "chat", auth: "bearer", models: [] });
+    const messages = aiProviderRoutingSchema.parse({ kind: "deepseek", protocol: "messages", auth: "bearer", models: [] });
+    const opencode = managedProviderRouting(chat, "opencode_local", "ds-key", "deepseek-flash");
+    expect(opencode.env.PAPERCLIP_AI_PROVIDER_KEY).toBe("ds-key");
+    expect(opencode.env.PAPERCLIP_AI_PROVIDER_URL).toBe("https://api.deepseek.com");
+    expect(opencode.config.model).toBe("paperclip/deepseek-flash");
+    const hermes = managedProviderRouting(chat, "hermes_local", "ds-key", "deepseek-flash");
+    expect(hermes.env.OPENAI_API_KEY).toBe("ds-key");
+    expect(hermes.env.OPENAI_BASE_URL).toBe("https://api.deepseek.com");
+    expect(hermes.hermesConfig).toContain('provider: "custom"');
+    expect(hermes.hermesConfig).toContain('"https://api.deepseek.com"');
+    expect(hermes.hermesConfig).not.toContain("ds-key");
+    const codex = managedProviderRouting(chat, "codex_local", "ds-key", "deepseek-flash");
+    expect(codex.codexConfig).toContain('model_provider = "paperclip"');
+    expect(codex.codexConfig).toContain('wire_api = "responses"');
+    expect(codex.codexConfig).toContain('base_url = "https://api.deepseek.com"');
+    expect(codex.codexConfig).not.toContain("ds-key");
+    const claude = managedProviderRouting(messages, "claude_local", "ds-key", "deepseek-flash");
+    expect(claude.env.ANTHROPIC_BASE_URL).toBe("https://api.deepseek.com/anthropic");
+    expect(claude.env.ANTHROPIC_AUTH_TOKEN).toBe("ds-key");
+    expect(claude.env.ANTHROPIC_MODEL).toBe("deepseek-flash[1m]");
+    expect(claude.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("deepseek-flash");
+    expect(claude.env.CLAUDE_CODE_SUBAGENT_MODEL).toBe("deepseek-flash");
+  });
+  it("maps DeepSeek reasoning effort into each harness's accepted domain", () => {
+    const messages = aiProviderRoutingSchema.parse({ kind: "deepseek", protocol: "messages", auth: "bearer", models: [] });
+    const chat = aiProviderRoutingSchema.parse({ kind: "deepseek", protocol: "chat", auth: "bearer", models: [] });
+    expect(managedProviderRouting(messages, "claude_local", "k", "deepseek-flash", "ultra").env.CLAUDE_CODE_EFFORT_LEVEL).toBe("max");
+    expect(managedProviderRouting(messages, "claude_local", "k", "deepseek-flash", "minimal").env.CLAUDE_CODE_EFFORT_LEVEL).toBe("low");
+    expect(managedProviderRouting(messages, "claude_local", "k", "deepseek-flash", "medium").env.CLAUDE_CODE_EFFORT_LEVEL).toBe("high");
+    const codex = managedProviderRouting(chat, "codex_local", "k", "deepseek-flash", "xhigh");
+    expect(codex.codexConfig.startsWith('model_reasoning_effort = "high"\nmodel_provider = "paperclip"')).toBe(true);
+    expect(managedProviderRouting(chat, "codex_local", "k", "deepseek-flash").codexConfig).not.toContain("model_reasoning_effort");
   });
 });

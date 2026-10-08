@@ -15,6 +15,7 @@ describe("AI authentication failure recovery", () => {
     ["paperclip_runner", { provider: "acpx", acpxAgent: "claude" }, "anthropic"],
     ["paperclip_runner", { provider: "acpx", acpxAgent: "grok" }, "xai"],
     ["opencode_local", { model: "openrouter/model" }, "openrouter"],
+    ["opencode_local", { model: "paperclip/deepseek-flash" }, "deepseek"],
   ] as const)("maps %s %j to %s", (adapter, config, provider) => {
     expect(aiBindingForAuthRecovery(adapter, config)).toMatchObject({ provider, mode: "responsible_user" });
   });

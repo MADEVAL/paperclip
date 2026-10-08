@@ -1,6 +1,7 @@
 import {
   aiRoutingBaseUrl,
   aiRoutingModel,
+  deepseekReasoningEffort,
   type AiProviderRouting,
 } from "@paperclipai/shared";
 
@@ -10,6 +11,7 @@ export function managedProviderRouting(
   harness: string,
   credential: string,
   model: string,
+  effort?: unknown,
 ) {
   const env: Record<string, string> = {};
   const config: Record<string, unknown> = {};
@@ -24,20 +26,29 @@ export function managedProviderRouting(
     env.AWS_BEARER_TOKEN_BEDROCK = credential;
   } else if (harness === "codex_local") {
     env.PAPERCLIP_AI_PROVIDER_KEY = credential;
-    codexConfig = `model_provider = "paperclip"\n[model_providers.paperclip]\nname = "Paperclip connection"\nbase_url = ${JSON.stringify(baseUrl)}\nwire_api = "responses"\nrequires_openai_auth = false\n${route.auth === "none" ? "" : 'env_key = "PAPERCLIP_AI_PROVIDER_KEY"\n'}`;
+    // DeepSeek normalizes the full effort domain, but pin it to low|high|max.
+    const level = route.kind === "deepseek" ? deepseekReasoningEffort(effort) : undefined;
+    codexConfig = `${level ? `model_reasoning_effort = ${JSON.stringify(level)}\n` : ""}model_provider = "paperclip"\n[model_providers.paperclip]\nname = "Paperclip connection"\nbase_url = ${JSON.stringify(baseUrl)}\nwire_api = "responses"\nrequires_openai_auth = false\n${route.auth === "none" ? "" : 'env_key = "PAPERCLIP_AI_PROVIDER_KEY"\n'}`;
   } else if (harness === "claude_local") {
+    // DeepSeek's Claude Code integration uses the `[1m]` window suffix on the
+    // primary models only (not the haiku/subagent aliases).
+    const claudeModel = route.kind === "deepseek" && model === "deepseek-flash"
+      ? "deepseek-flash[1m]"
+      : model;
     env.ANTHROPIC_BASE_URL = baseUrl;
     env[
       route.auth === "api_key" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN"
     ] = credential;
     env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
     if (model) {
-      env.ANTHROPIC_MODEL = model;
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+      env.ANTHROPIC_MODEL = claudeModel;
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = claudeModel;
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = claudeModel;
       env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
       env.CLAUDE_CODE_SUBAGENT_MODEL = model;
     }
+    const claudeLevel = route.kind === "deepseek" ? deepseekReasoningEffort(effort) : undefined;
+    if (claudeLevel) env.CLAUDE_CODE_EFFORT_LEVEL = claudeLevel;
   } else if (harness === "opencode_local") {
     const provider = route.kind === "openrouter" ? "openrouter" : "paperclip";
     if (route.kind === "openrouter") env.OPENROUTER_API_KEY = credential;
