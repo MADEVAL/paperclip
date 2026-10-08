@@ -94,7 +94,7 @@ export function AiConnectionField({
   const [advancedSetup, setAdvancedSetup] = useState(false);
   const [reconnecting, setReconnecting] = useState<AiManagedConnectionSummary>();
   const [allAgents, setAllAgents] = useState(true);
-  const [savedAccount, setSavedAccount] = useState<{ connectionId: string; grantId: string; method: AiAuthMethod }>();
+  const [savedAccount, setSavedAccount] = useState<{ connectionId: string; grantId: string; method: AiAuthMethod; provider: AiProvider }>();
   // Keep the reopened agent's saved provider (or the account being repaired)
   // instead of falling back to the harness default and swapping providers.
   // If the saved provider no longer fits the harness, use the harness provider.
@@ -123,7 +123,7 @@ export function AiConnectionField({
     },
     onSuccess: async (result) => {
       await client.invalidateQueries({ queryKey: ["ai-connections", companyId] });
-      changeBinding({ provider: activeProvider!, method: result.method, mode: "responsible_user" });
+      changeBinding({ provider: result.provider, method: result.method, mode: "responsible_user" });
       setConnecting(false);
     },
   });
@@ -286,8 +286,11 @@ export function AiConnectionField({
             environmentId={environmentId}
             onCancel={() => setConnecting(false)}
             onComplete={(result) => {
-              setSavedAccount(result);
-              selectDefault.mutate(result);
+              // Bind the provider that saved this credential, not whatever the
+              // chooser points to if the user switched providers mid-save.
+              const saved = { ...result, provider: activeProvider! };
+              setSavedAccount(saved);
+              selectDefault.mutate(saved);
             }}
           />}
           {!reconnecting && !savedAccount && <details>

@@ -186,6 +186,11 @@ describe("provider routing", () => {
     expect(claude.env.ANTHROPIC_MODEL).toBe("deepseek-flash[1m]");
     expect(claude.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("deepseek-flash");
     expect(claude.env.CLAUDE_CODE_SUBAGENT_MODEL).toBe("deepseek-flash");
+    // The Claude adapter passes config.model through --model and prefers it over
+    // ANTHROPIC_MODEL, so the resolved DeepSeek model must be published there.
+    expect(claude.config.model).toBe("deepseek-flash[1m]");
+    expect(managedProviderRouting(messages, "claude_local", "ds-key", "deepseek-v4-pro").config.model).toBe("deepseek-v4-pro");
+    expect(managedProviderRouting(messages, "claude_local", "ds-key", "").config.model).toBe("deepseek-flash[1m]");
   });
   it("maps DeepSeek reasoning effort into each harness's accepted domain", () => {
     const messages = aiProviderRoutingSchema.parse({ kind: "deepseek", protocol: "messages", auth: "bearer", models: [] });

@@ -47,6 +47,12 @@ export function managedProviderRouting(
       env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
       env.CLAUDE_CODE_SUBAGENT_MODEL = model;
     }
+    if (route.kind === "deepseek") {
+      // The Claude adapter passes config.model through --model and prefers it
+      // over ANTHROPIC_MODEL, so publish the resolved DeepSeek model (with its
+      // window suffix and a default) there too.
+      config.model = model ? claudeModel : "deepseek-flash[1m]";
+    }
     const claudeLevel = route.kind === "deepseek" ? deepseekReasoningEffort(effort) : undefined;
     if (claudeLevel) env.CLAUDE_CODE_EFFORT_LEVEL = claudeLevel;
   } else if (harness === "opencode_local") {
