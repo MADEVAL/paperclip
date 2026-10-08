@@ -31,3 +31,18 @@ it("allows retry after a DeepSeek catalog failure without caching the error", as
   await expect(listDeepSeekModels("key")).rejects.toThrow("Retry or enter a model ID manually");
   await expect(listDeepSeekModels("key")).resolves.toEqual([{ id: "deepseek-flash", label: "deepseek-flash" }]);
 });
+
+it("keys in-flight DeepSeek catalog requests by credential", async () => {
+  const models: Record<string, string> = { "key-a": "deepseek-a", "key-b": "deepseek-b" };
+  const fetch = vi.fn(async (_url: string, init?: { headers?: { Authorization?: string } }) => {
+    const credential = String(init?.headers?.Authorization ?? "").replace("Bearer ", "");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return { ok: true, json: async () => ({ data: [{ id: models[credential] }] }) };
+  });
+  vi.stubGlobal("fetch", fetch);
+  const { listDeepSeekModels } = await import("./deepseek-models.js");
+  const [first, second] = await Promise.all([listDeepSeekModels("key-a"), listDeepSeekModels("key-b")]);
+  expect(first).toEqual([{ id: "deepseek-a", label: "deepseek-a" }]);
+  expect(second).toEqual([{ id: "deepseek-b", label: "deepseek-b" }]);
+  expect(fetch).toHaveBeenCalledTimes(2);
+});

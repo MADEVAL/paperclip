@@ -2,14 +2,17 @@ import { createHash } from "node:crypto";
 import type { AdapterModel } from "@paperclipai/adapter-utils";
 
 let cached: { key: string; until: number; models: AdapterModel[] } | undefined;
-let pending: Promise<AdapterModel[]> | undefined;
+// In-flight requests are keyed by the same credential hash as the cache, so one
+// account's refresh never returns another account's result or error.
+const pending = new Map<string, Promise<AdapterModel[]>>();
 
 /** DeepSeek's `/models` endpoint requires the connection's own Bearer key. */
 export async function listDeepSeekModels(credential: string): Promise<AdapterModel[]> {
   const key = createHash("sha256").update(credential).digest("hex").slice(0, 16);
   if (cached && cached.key === key && cached.until > Date.now()) return cached.models;
-  if (pending) return pending;
-  pending = (async () => {
+  const inFlight = pending.get(key);
+  if (inFlight) return inFlight;
+  const request = (async () => {
     const response = await fetch("https://api.deepseek.com/models", {
       headers: { Authorization: `Bearer ${credential}` },
       redirect: "error",
@@ -27,5 +30,6 @@ export async function listDeepSeekModels(credential: string): Promise<AdapterMod
     cached = { key, until: Date.now() + 60_000, models };
     return models;
   })();
-  try { return await pending; } finally { pending = undefined; }
+  pending.set(key, request);
+  try { return await request; } finally { pending.delete(key); }
 }

@@ -384,7 +384,7 @@ export async function prepareManagedAiRuntime(
       config: {
         ...input.config,
         ...projected?.config,
-        ...(routing ? { managedAiRouting: routing } : {}),
+        ...(projectionRouting ? { managedAiRouting: projectionRouting } : {}),
         env,
         managedAiConnection: { ...selection.attribution, identity, sessionIdentity },
       },

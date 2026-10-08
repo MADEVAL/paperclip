@@ -86,7 +86,6 @@ export function AiConnectionField({
   const provider = aiProviderForAdapter(adapterType);
   const providerCandidates = aiProvidersForAdapter(adapterType);
   const [chosenProvider, setChosenProvider] = useState<AiProvider>();
-  const activeProvider = chosenProvider ?? provider;
   const returnFocus = useRef<HTMLElement | null>(null);
   const restoreFocus = (event: Event) => { event.preventDefault(); returnFocus.current?.focus(); };
   const [adopting, setAdopting] = useState(false);
@@ -96,6 +95,12 @@ export function AiConnectionField({
   const [reconnecting, setReconnecting] = useState<AiManagedConnectionSummary>();
   const [allAgents, setAllAgents] = useState(true);
   const [savedAccount, setSavedAccount] = useState<{ connectionId: string; grantId: string; method: AiAuthMethod }>();
+  // Keep the reopened agent's saved provider (or the account being repaired)
+  // instead of falling back to the harness default and swapping providers.
+  const activeProvider = chosenProvider
+    ?? reconnecting?.provider
+    ?? (value && value.mode !== "router" ? value.provider : undefined)
+    ?? provider;
   const changeBinding = (next: AiRuntimeConnectionBinding) => {
     if (legacy && !value) { if (!connecting) returnFocus.current = document.activeElement as HTMLElement; setPendingAdoption(next); }
     else onChange(next);

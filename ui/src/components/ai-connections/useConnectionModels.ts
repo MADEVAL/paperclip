@@ -63,10 +63,10 @@ export function useConnectionModels(
           label: m.label ?? m.id,
         })),
         isLoading: discover ? catalog.isLoading : deepseek ? deepseekLive.isLoading : false,
-        error: discover ? catalog.error : null,
+        error: discover ? catalog.error : deepseek ? deepseekLive.error : null,
         refreshing: discover ? catalog.isFetching : deepseek ? deepseekLive.isFetching : false,
         refreshModels: discover ? async () => { await catalog.refetch(); }
-          : deepseek ? async () => { await deepseekLive.refetch(); }
+          : deepseek && companyId && connection ? async () => { await deepseekLive.refetch(); }
           : undefined,
         resolveModel: (model: string) =>
           aiRoutingModel(effectiveRouting, harness, model),

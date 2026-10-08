@@ -925,6 +925,19 @@ console.log(JSON.stringify({ type: "result", subtype: "success", result: "hello"
     await db.update(connectionGrants).set({ status: "revoked" }).where(eq(connectionGrants.id, saved.grantId));
     await expect(service.select({ ...input, binding: selected, userId: "alice", adapterType: "codex_local", model: "openai/gpt-5.4" })).rejects.toThrow("Reconnect");
   });
+  it("publishes the synthesized DeepSeek route so agent setup verifies the projected credential", async () => {
+    const owner = "deepseek-native-owner";
+    await db.insert(companyMemberships).values({ companyId, principalId: owner, principalType: "user", status: "active", membershipRole: "member" });
+    const saved = await service.save(companyId, owner, { provider: "deepseek", method: "api_key", ownership: "personal", name: "DeepSeek", apiKey: "fixture", agentIds: [], allAgents: true }, "fixture-deepseek-credential");
+    const selected = { provider: "deepseek", method: "api_key", mode: "delegated", ...saved } as const;
+    const protocols = { opencode_local: "chat", codex_local: "responses", claude_local: "messages", hermes_local: "chat" } as const;
+    for (const [adapterType, protocol] of Object.entries(protocols)) {
+      const runtime = await prepareManagedAiRuntime(db, { companyId, agentId, responsibleUserId: owner, adapterType, binding: selected, config: { model: "deepseek-flash" } });
+      try {
+        expect(runtime.config.managedAiRouting).toMatchObject({ kind: "deepseek", protocol, auth: "bearer" });
+      } finally { await runtime.cleanup(); }
+    }
+  });
   it("reconnects JSONB routing without changing its identity or access", async () => {
     const routing = { kind: "gateway", protocol: "responses", auth: "bearer", baseUrl: "https://gateway.example/v1", models: [{ id: "gateway-model" }] } as const;
     const input = { provider: "openai", method: "api_key", name: "Reconnect gateway", ownership: "personal", allAgents: false, agentIds: [agentId], routing: { ...routing, models: [...routing.models] } } as const;

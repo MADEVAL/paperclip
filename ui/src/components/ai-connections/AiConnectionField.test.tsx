@@ -165,3 +165,17 @@ it("offers DeepSeek for a reusable harness and creates it without guessing the p
   expect(mocks.setDefault).toHaveBeenCalledWith("company", "ds-grant");
   expect(onChange).toHaveBeenCalledWith({ provider: "deepseek", method: "api_key", mode: "responsible_user" });
 });
+
+it("keeps a reopened agent's saved DeepSeek binding instead of the harness default", async () => {
+  mocks.list.mockResolvedValue({ currentUserId: "owner", connections: [], canManageConnections: true });
+  flushSync(() => root.render(<QueryClientProvider client={client}>
+    <AiConnectionField companyId="company" agentId="agent" agentName="Nova" adapterType="claude_local"
+      value={{ provider: "deepseek", method: "api_key", mode: "responsible_user" }} onChange={onChange} />
+  </QueryClientProvider>));
+  await settle();
+  await click("Connect another account");
+  const select = document.querySelector<HTMLSelectElement>('select[aria-label="Provider"]')!;
+  expect(select).not.toBeNull();
+  expect(select.value).toBe("deepseek");
+  expect(credentialProps).toMatchObject({ provider: "deepseek", initialMethod: "api_key" });
+});

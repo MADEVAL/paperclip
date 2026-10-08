@@ -68,7 +68,13 @@ export function aiBindingForAuthRecovery(
   // harness alone never identifies it. Only the model id is a signal; never
   // guess DeepSeek for an unrelated model on a shared harness.
   const deepseekModel = model.includes("deepseek");
-  for (const provider of AI_PROVIDERS) {
+  // DeepSeek shares the opencode/codex/claude/hermes harnesses, so only the
+  // model id identifies it. When the model names DeepSeek, try it before the
+  // harness default; otherwise keep the default order and never guess it.
+  const providers: readonly AiProvider[] = deepseekModel
+    ? ["deepseek", ...AI_PROVIDERS.filter((provider) => provider !== "deepseek")]
+    : AI_PROVIDERS;
+  for (const provider of providers) {
     if (missingProvider && missingProvider !== provider) continue;
     if (provider === "deepseek" && !deepseekModel) continue;
     const binding = { provider, method: AI_CONNECTION_CAPABILITIES[provider].methods.subscription ? "subscription" : "api_key", mode: "responsible_user" } as const;
