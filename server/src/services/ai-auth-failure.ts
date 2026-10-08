@@ -66,8 +66,9 @@ export function aiBindingForAuthRecovery(
   const model = typeof config.model === "string" ? config.model : "";
   // DeepSeek reuses the opencode/codex/claude/hermes harnesses, so a shared
   // harness alone never identifies it. Only the model id is a signal; never
-  // guess DeepSeek for an unrelated model on a shared harness.
-  const deepseekModel = model.includes("deepseek");
+  // guess DeepSeek for an unrelated model or for an aggregator route such as
+  // openrouter/deepseek/... that is repaired through its own provider.
+  const deepseekModel = model.includes("deepseek") && !model.startsWith("openrouter/");
   // DeepSeek shares the opencode/codex/claude/hermes harnesses, so only the
   // model id identifies it. When the model names DeepSeek, try it before the
   // harness default; otherwise keep the default order and never guess it.

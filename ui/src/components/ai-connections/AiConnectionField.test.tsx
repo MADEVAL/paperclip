@@ -179,3 +179,15 @@ it("keeps a reopened agent's saved DeepSeek binding instead of the harness defau
   expect(select.value).toBe("deepseek");
   expect(credentialProps).toMatchObject({ provider: "deepseek", initialMethod: "api_key" });
 });
+
+it("uses the new harness provider when the saved binding no longer fits", async () => {
+  mocks.list.mockResolvedValue({ currentUserId: "owner", connections: [], canManageConnections: true });
+  flushSync(() => root.render(<QueryClientProvider client={client}>
+    <AiConnectionField companyId="company" agentId="agent" agentName="Nova" adapterType="gemini_local"
+      value={{ provider: "anthropic", method: "subscription", mode: "responsible_user" }} onChange={onChange} />
+  </QueryClientProvider>));
+  await settle();
+  await click("Connect another account");
+  expect(document.querySelector('select[aria-label="Provider"]')).toBeNull();
+  expect(credentialProps).toMatchObject({ provider: "google", initialMethod: "api_key" });
+});
