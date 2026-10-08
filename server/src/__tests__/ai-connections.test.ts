@@ -812,7 +812,7 @@ console.log(JSON.stringify({ type: "result", subtype: "success", result: "hello"
     await db.insert(companyMemberships).values({ companyId, principalId: owner, principalType: "user", status: "active", membershipRole: "member" });
     // Reapply the current provider constraint so this test does not depend on
     // the order of the migration-replay tests that share this database.
-    const migration = await readFile(new URL("../../../packages/db/src/migrations/0319_clammy_supreme_intelligence.sql", import.meta.url), "utf8");
+    const migration = await readFile(new URL("../../../packages/db/src/migrations/0320_clean_storm.sql", import.meta.url), "utf8");
     for (const statement of migration.split("--> statement-breakpoint")) {
       if (statement.trim()) await db.execute(sql.raw(statement));
     }

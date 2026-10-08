@@ -37,7 +37,7 @@ PR; merging is a separate human action.
   `testCredentials`.
 - Catalog and branding: `aiCatalogEntries` entry, generated `deepseek.json` and
   `app-definitions.generated.ts`; sanitized official `deepseek.svg` and manifest entry.
-- Database: both provider CHECK constraints extended; migration `0319`; snapshot window.
+- Database: both provider CHECK constraints extended; migration `0320`; snapshot window.
 - Server: DeepSeek branch in `managedProviderRouting` (effort, `[1m]`); native
   `projectionRouting` synthesis in `ai-connection-runtime`; `validateAiApiKey` endpoint;
   recovery env map; `agents.ts` provider→adapter map; `deepseek()` balance probe;
@@ -78,7 +78,7 @@ Live smoke against `https://api.deepseek.com` (real key, not retained):
 
 - [x] Shared identity, routing, effort, models, and usage-probe support.
 - [x] Catalog entry, generated artifacts, and branding.
-- [x] Database CHECKs and migration `0319`.
+- [x] Database CHECKs and migration `0320`.
 - [x] Server projection, recovery, live model list, and usage probe.
 - [x] UI wiring, including the provider chooser.
 - [x] Docs updated.
