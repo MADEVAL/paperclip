@@ -33,6 +33,8 @@ import {
   allowsUnsupportedOpenCodeVersion,
   probeOpenCodeCliVersion,
   unsupportedOpenCodeVersionMessage,
+  usesOpenCodeV2Cli,
+  type OpenCodeCliVersion,
 } from "./version.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
@@ -146,6 +148,7 @@ export async function testEnvironment(
   // still has the path available for cleanup in `finally` — otherwise the
   // `fs.mkdtemp` directory leaks on the early-throw path.
   let preparedRuntimeWorkspaceLocalDir: string | null = null;
+  let openCodeCliVersion: OpenCodeCliVersion | null = null;
   try {
     let runtimeTarget: AdapterExecutionTarget | null = target ?? null;
     let runtimeCwd = cwd;
@@ -227,6 +230,7 @@ export async function testEnvironment(
         // same escape hatch `execute.ts` does: when the operator opts into an
         // unverified version, downgrade to a warning instead of failing adoption.
         const cliVersion = await probeOpenCodeCliVersion({ command, cwd, env: runtimeEnv });
+        if (cliVersion) openCodeCliVersion = cliVersion;
         if (cliVersion && !cliVersion.supported) {
           const bypassed = allowsUnsupportedOpenCodeVersion(env);
           checks.push({
@@ -267,7 +271,7 @@ export async function testEnvironment(
       modelValidationPassed = true;
     } else if (canRunProbe && configuredModel) {
       try {
-        const discovered = await discoverOpenCodeModels({ command, cwd, env: runtimeEnv });
+        const discovered = await discoverOpenCodeModels({ command, cwd, env: runtimeEnv, openCodeMajor: openCodeCliVersion?.major });
         if (discovered.length > 0) {
           checks.push({
             code: "opencode_models_discovered",
@@ -303,7 +307,7 @@ export async function testEnvironment(
       }
     } else if (!targetIsRemote && canRunProbe && !configuredModel) {
       try {
-        const discovered = await discoverOpenCodeModels({ command, cwd, env: runtimeEnv });
+        const discovered = await discoverOpenCodeModels({ command, cwd, env: runtimeEnv, openCodeMajor: openCodeCliVersion?.major });
         if (discovered.length > 0) {
           checks.push({
             code: "opencode_models_discovered",
@@ -342,6 +346,7 @@ export async function testEnvironment(
           command,
           cwd,
           env: runtimeEnv,
+          openCodeMajor: openCodeCliVersion?.major,
         });
         checks.push({
           code: "opencode_model_configured",
@@ -369,8 +374,12 @@ export async function testEnvironment(
       const probeModel = configuredModel;
 
       const args = ["run", "--format", "json"];
-      args.push("--model", probeModel);
-      if (variant) args.push("--variant", variant);
+      // V2 folds the variant into the model ref and has no `--variant` flag.
+      const openCodeV2 = usesOpenCodeV2Cli(openCodeCliVersion);
+      const probeModelArg =
+        openCodeV2 && variant ? `${probeModel}#${variant}` : probeModel;
+      args.push("--model", probeModelArg);
+      if (!openCodeV2 && variant) args.push("--variant", variant);
       if (extraArgs.length > 0) args.push(...extraArgs);
 
       // Sandbox bridges still add cold-start and transport overhead, but the

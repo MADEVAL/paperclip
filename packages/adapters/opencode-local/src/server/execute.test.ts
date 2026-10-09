@@ -372,7 +372,10 @@ describe("OpenCode version guard", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  async function callExecute(extraEnv: Record<string, string> = {}) {
+  async function callExecute(
+    extraEnv: Record<string, string> = {},
+    extraConfig: Record<string, unknown> = {},
+  ) {
     const commandPath = path.join(root, "opencode");
     await fs.writeFile(commandPath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     runProcessMock.mockReset();
@@ -388,25 +391,47 @@ describe("OpenCode version guard", () => {
         cwd: root,
         model: "openai/gpt-5",
         env: { OPENCODE_ALLOW_ALL_MODELS: "1", ...extraEnv },
+        ...extraConfig,
       },
       context: {},
       onLog: async () => {},
     });
   }
 
+  function lastExecutionArgs(): string[] {
+    return (runProcessMock.mock.calls.at(-1)?.[3] ?? []) as string[];
+  }
+
   it("fails fast with an actionable message when OpenCode's major version is unsupported", async () => {
-    versionProbeMock.mockResolvedValue({ version: "2.0.1", major: 2, minor: 0, patch: 1, supported: false });
-    await expect(callExecute()).rejects.toThrow(/OpenCode 2\.0\.1 is not supported/);
+    versionProbeMock.mockResolvedValue({ version: "3.0.1", major: 3, minor: 0, patch: 1, supported: false });
+    await expect(callExecute()).rejects.toThrow(/OpenCode 3\.0\.1 is not supported/);
   });
 
-  it("runs normally when the qualified major version is installed", async () => {
-    versionProbeMock.mockResolvedValue({ version: "1.18.34", major: 1, minor: 18, patch: 34, supported: true });
+  it.each(["1.18.34", "2.0.26"])("runs normally on a qualified major (%s)", async (version) => {
+    const [major, minor, patch] = version.split(".").map(Number);
+    versionProbeMock.mockResolvedValue({ version, major, minor, patch, supported: true });
     const result = await callExecute();
     expect(result.exitCode).toBe(0);
   });
 
+  it("keeps the separate --variant flag on OpenCode V1", async () => {
+    versionProbeMock.mockResolvedValue({ version: "1.18.34", major: 1, minor: 18, patch: 34, supported: true });
+    await callExecute({}, { model: "paperclip/deepseek-flash", variant: "high" });
+    const args = lastExecutionArgs();
+    expect(args[args.indexOf("--model") + 1]).toBe("paperclip/deepseek-flash");
+    expect(args[args.indexOf("--variant") + 1]).toBe("high");
+  });
+
+  it("folds the variant into the model and omits --variant on OpenCode V2", async () => {
+    versionProbeMock.mockResolvedValue({ version: "2.0.26", major: 2, minor: 0, patch: 26, supported: true });
+    await callExecute({}, { model: "paperclip/deepseek-flash", variant: "high" });
+    const args = lastExecutionArgs();
+    expect(args[args.indexOf("--model") + 1]).toBe("paperclip/deepseek-flash#high");
+    expect(args).not.toContain("--variant");
+  });
+
   it("allows an unverified major version when the escape hatch is set", async () => {
-    versionProbeMock.mockResolvedValue({ version: "2.0.1", major: 2, minor: 0, patch: 1, supported: false });
+    versionProbeMock.mockResolvedValue({ version: "3.0.1", major: 3, minor: 0, patch: 1, supported: false });
     const result = await callExecute({ PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION: "1" });
     expect(result.exitCode).toBe(0);
   });

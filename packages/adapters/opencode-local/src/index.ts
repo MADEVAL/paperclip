@@ -1,15 +1,15 @@
 export const type = "opencode_local";
 export const label = "OpenCode";
 
-// Paperclip qualifies OpenCode 1.18.x for this adapter: the CLI JSONL contract
-// (`opencode run --format json`) and the injected runtime config shape are
-// verified against it. The Paperclip Runner pins this exact release; the direct
-// adapter enforces the supported major version at run time
-// (see `server/version.ts`), and the sandbox installer below pins the qualified
-// release so a managed install cannot silently drift onto a newer major (for
-// example OpenCode 2.x, whose server and plugin APIs are breaking changes).
+// Paperclip qualifies OpenCode for this adapter on the 1.x and 2.x lines: the
+// CLI JSONL contract (`opencode run --format json`) and the injected runtime
+// config shape are verified against both. V2 changed the `run` contract the
+// adapter drives (`--variant` folds into `provider/model#variant`, `models`
+// drops `--refresh`) and the server/plugin APIs, so `server/version.ts` gates
+// the CLI flags by major and the sandbox installer below pins a qualified
+// release instead of `latest`.
 export const QUALIFIED_OPENCODE_VERSION = "1.18.34";
-export const SUPPORTED_OPENCODE_MAJOR_VERSION = 1;
+export const SUPPORTED_OPENCODE_MAJOR_VERSIONS = [1, 2] as const;
 
 // Use OpenCode's official installer instead of `npm install -g opencode-ai`.
 // The npm package reifies four large Linux x64 prebuilt-binary subpackages
@@ -121,10 +121,11 @@ Notes:
 - OpenCode supports multiple providers and models. Use \
   \`opencode models\` to list available options in provider/model format.
 - Paperclip requires an explicit \`model\` value for \`opencode_local\` agents.
-- Paperclip qualifies OpenCode ${QUALIFIED_OPENCODE_VERSION} (1.x). A newer \
-  major (for example OpenCode 2.x) is detected before the run and rejected with \
-  an actionable error; set PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION=1 to \
-  bypass that guard for an unverified run.
+- Paperclip supports OpenCode 1.x and 2.x. The adapter detects the installed \
+  major before a run and adjusts the CLI flags accordingly (V2 folds the variant \
+  into \`provider/model#variant\`); an unsupported major is rejected with an \
+  actionable error. Set PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION=1 to bypass \
+  that guard for an unverified run.
 - Runs are executed with: opencode run --format json ...
 - Sessions are resumed with --session when stored session cwd matches current cwd.
 - The adapter sets OPENCODE_DISABLE_PROJECT_CONFIG=true to prevent OpenCode from \

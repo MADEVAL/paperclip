@@ -1,7 +1,7 @@
 import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
 import {
   QUALIFIED_OPENCODE_VERSION,
-  SUPPORTED_OPENCODE_MAJOR_VERSION,
+  SUPPORTED_OPENCODE_MAJOR_VERSIONS,
 } from "../index.js";
 
 const OPENCODE_VERSION_PATTERN = /(\d+)\.(\d+)\.(\d+)/;
@@ -38,8 +38,28 @@ export function parseOpenCodeCliVersion(
     major,
     minor,
     patch,
-    supported: major === SUPPORTED_OPENCODE_MAJOR_VERSION,
+    supported: (SUPPORTED_OPENCODE_MAJOR_VERSIONS as readonly number[]).includes(
+      major,
+    ),
   };
+}
+
+/**
+ * OpenCode V2 changed the `run` CLI contract that the adapter drives:
+ * `--variant` is gone (the variant joins the model ref as
+ * `provider/model#variant`) and `opencode models` no longer accepts
+ * `--refresh`. V1 keeps both.
+ */
+export function usesOpenCodeV2Cli(
+  version: OpenCodeCliVersion | null | undefined,
+): boolean {
+  return version?.major === 2;
+}
+
+export function supportedOpenCodeMajors(): string {
+  return SUPPORTED_OPENCODE_MAJOR_VERSIONS.map((major) => `${major}.x`).join(
+    " and ",
+  );
 }
 
 export function unsupportedOpenCodeVersionMessage(
@@ -48,9 +68,10 @@ export function unsupportedOpenCodeVersionMessage(
   const value = typeof version === "string" ? version : version.version;
   return (
     `OpenCode ${value} is not supported by the opencode_local adapter. ` +
-    `Paperclip qualifies OpenCode ${QUALIFIED_OPENCODE_VERSION}. ` +
-    `Install it with \`curl -fsSL https://opencode.ai/install | bash -s -- --version ${QUALIFIED_OPENCODE_VERSION}\`, ` +
-    `or point the agent "command" at a ${SUPPORTED_OPENCODE_MAJOR_VERSION}.x binary. ` +
+    `Paperclip supports OpenCode ${supportedOpenCodeMajors()}. ` +
+    `Install a supported release, for example ${QUALIFIED_OPENCODE_VERSION} with ` +
+    `\`curl -fsSL https://opencode.ai/install | bash -s -- --version ${QUALIFIED_OPENCODE_VERSION}\`, ` +
+    `or point the agent "command" at a supported binary. ` +
     `Set PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION=1 to bypass this guard for an unverified run.`
   );
 }
