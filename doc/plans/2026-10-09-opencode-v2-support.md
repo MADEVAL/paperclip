@@ -107,11 +107,28 @@ proxy command; new exports expose the V2 pin and window.
 - `opencode-server-driver.test.ts`: new mocked V2 cases for the native config +
   reload, a full text/usage/terminal turn, form-to-runtime-request, permission,
   and interruption. The shared `fake-opencode-server.mjs` gained a
-  `FAKE_OPENCODE_API=v2` mode.
-- `opencode-server-driver.live.test.ts`: a gated live smoke
-  (`PAPERCLIP_OPENCODE_LIVE_BIN`) run locally against both the bundled
-  `opencode-ai@1.18.34` binary and the qualified `opencode v2.0.26` binary. Both
-  completed a turn with correct usage.
+  `FAKE_OPENCODE_API=v2` mode. Run on Linux (WSL Ubuntu, Node 24): 62 pass, 1
+  pre-existing V1 failure (`uses provider structure rather than prose length...`
+  also fails on `master`), 0 V2 failures.
+- `opencode-server-driver.live.test.ts`: a live V2 smoke gated by
+  `PAPERCLIP_OPENCODE_LIVE_BIN` (only runs when the binary is 2.x). Verified
+  live against `opencode v2.0.26`:
+  - text turn + usage,
+  - the Paperclip completion tool called directly (`paperclip_paperclip_finish`)
+    -> `run.result.proposed` + `turn.completed`,
+  - a `read` permission request surfaced as a runtime request and resolved,
+  - interruption -> cancelled turn.
+
+### V2 MCP finding
+
+V2 does **not** auto-connect MCP servers, `/api/mcp` lists only connected
+servers, and a location reload registers the server asynchronously. Without a
+connected server the model never sees the Paperclip semantic tools, so the
+completion tool fails and the turn ends with no structured result. The driver
+now sets `codemode: false`, nudges each server with
+`POST /api/experimental/mcp/{name}/connect`, and waits until `GET /api/mcp`
+reports it connected before the first session.
+
 
 ## Phase 4 - qualification (planned)
 
