@@ -117,6 +117,11 @@ const adapterDisplayMap: Record<string, AdapterDisplayInfo> = {
     description: "OpenCode multi-provider harness",
     icon: OpenCodeLogoIcon,
   },
+  opencode_gateway: {
+    label: "OpenCode Gateway",
+    description: "Connect to an already-running OpenCode server (HTTP/SSE)",
+    icon: OpenCodeLogoIcon,
+  },
   pi_local: {
     label: "Pi",
     description: "Pi harness",
