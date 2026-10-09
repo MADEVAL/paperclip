@@ -1,7 +1,7 @@
 # OpenCode V2 support
 
 Date: 2026-10-09
-Status: Phase 1 shipped (direct CLI adapter); Phases 2-4 planned
+Status: Phases 1-3 shipped (direct CLI adapter + runner server driver); Phase 4 (broad qualification) in progress
 
 ## Why
 
@@ -9,7 +9,7 @@ OpenCode V2 shipped as a breaking major: the server API, plugin API, and
 terminal client configuration changed, and the `run` CLI contract dropped
 `--variant` and `models --refresh`. Paperclip's direct `opencode_local` adapter
 previously hard-rejected any non-1.x install, so a V2 user could not save or run
-an agent. The Paperclip Runner's `opencode_server` driver additionally drives
+an agent. The Paperclip Runner's `opencode_server` driver additionally drove
 the V1 HTTP server API (`/session`, `/session/:id/prompt_async`, `/event`,
 `/permission`, `/question`), which V2 replaced under `/api/...`.
 
@@ -41,16 +41,96 @@ Emit V2-native provider config when the CLI is V2:
 small/title model, falling back to the V1 shape on 1.x. Add the `mcp.servers`
 shape when the runner path lands.
 
-## Phase 3 - runner server driver V2 (planned, large)
+## Phase 3 - runner server driver V2 - DONE
 
-Port `packages/paperclip-runner/src/drivers/opencode/opencode-server-driver.ts`
-to the V2 HTTP API under `/api/...`: sessions (`/api/session`,
-`/api/session/{id}/prompt`), events (`/api/event`), permissions
-(`/api/session/{id}/permission/{requestID}/reply`), and forms/questions. Widen
-the exact version pin to a tested window (1.x and 2.x) and re-run the
-question-conformance qualification.
+Ported `packages/paperclip-runner/src/drivers/opencode/opencode-server-driver.ts`
+to the V2 HTTP API while preserving the V1 path byte-for-byte.
+
+### What was found (live research)
+
+`opencode serve` 2.0.26 was run locally and its real OpenAPI contract
+(`/openapi.json`) plus live SSE stream were captured. Two findings shaped the
+design:
+
+1. **The event API is a full redesign, not a rename.** V2 replaced the V1
+   `properties`-carrying `message.part.updated` / `session.idle` family with a
+   granular `session.*` family under an `{id, type, data}` envelope:
+   `session.execution.started|succeeded|failed|interrupted`,
+   `session.step.started|streamed|ended`, `session.text.started|delta|ended`,
+   `session.reasoning.*`, `session.tool.input.started|ended`,
+   `session.tool.called|succeeded|failed`, `session.usage.updated`,
+   `permission.asked|replied`, and `form.created|replied|cancelled`.
+2. **V2 ignores `OPENCODE_SERVER_USERNAME`.** Basic auth always uses the
+   `opencode` username; only `OPENCODE_SERVER_PASSWORD` is honoured. The driver
+   now sets the username to `opencode` for both generations.
+
+### Design
+
+- `packages/paperclip-runner/src/drivers/opencode/api-client.ts` introduces a
+  thin `OpenCodeApiClient` transport with `OpenCodeV1Client` and
+  `OpenCodeV2Client` implementations selected from the server-info version.
+- Version detection probes `GET /api/info` first (V2) and falls back to
+  `GET /global/health` (V1) in `waitForServerInfo`. The driver reports the
+  protocol version (`http+sse/v1` or `http+sse/v2`) in the session context.
+- The V2 client folds each granular `session.*` event back into the exact
+  V1-shaped provider event the existing canonical mapper already consumes, so
+  turn attribution, semantic-result selection, and workspace handling stay
+  single-sourced. Text/reasoning deltas are accumulated per part so the V1
+  delta diffing keeps working.
+- Requests are versioned: `POST /api/session` (with `model`), `POST
+  /api/session/{id}/prompt`, `POST /api/session/{id}/interrupt`, `GET
+  /api/event`, `GET /api/permission/request`, `POST /api/session/{id}/permission/{requestID}/reply`
+  with a `decision`, and the forms API
+  (`GET/POST/DELETE /api/session/{id}/form...`) in place of questions.
+- V2 config is native (`providers`, `settings`, `agents.title.model`,
+  `agents.paperclip.system`, `permissions` rule list, `mcp.servers` with
+  `disabled`/`timeout`). Because the server version is only known after the
+  server starts, the driver writes the V1-compatible bootstrap config, detects
+  the version, then rewrites the native V2 config and applies it through
+  `POST /api/location/reload`. V1 never reloads, so its config is unchanged.
+
+### Version window
+
+`api-client.ts` replaces the exact `1.18.34` equality gate with a tested window:
+
+- `1.18.34 <= v < 2.0.0` (V1)
+- `2.0.0 <= v < 2.1.0` (V2)
+
+`PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_RUNNER_VERSION=1` remains as the
+documented bypass. `QUALIFIED_OPENCODE_VERSION` stays exported (V1 pin) for the
+proxy command; new exports expose the V2 pin and window.
+
+### Verification
+
+- `api-client.test.ts`: version windows, protocol classification, V1/V2 request
+  bodies, V2 event folding, and form-answer mapping (runs everywhere).
+- `opencode-server-driver.test.ts`: new mocked V2 cases for the native config +
+  reload, a full text/usage/terminal turn, form-to-runtime-request, permission,
+  and interruption. The shared `fake-opencode-server.mjs` gained a
+  `FAKE_OPENCODE_API=v2` mode.
+- `opencode-server-driver.live.test.ts`: a gated live smoke
+  (`PAPERCLIP_OPENCODE_LIVE_BIN`) run locally against both the bundled
+  `opencode-ai@1.18.34` binary and the qualified `opencode v2.0.26` binary. Both
+  completed a turn with correct usage.
 
 ## Phase 4 - qualification (planned)
 
-Live end-to-end runs on V2 for each harness (direct adapter and runner), sandbox
-image pins, and user-facing docs.
+Full end-to-end runs on V2 for each harness (direct adapter and runner),
+sandbox image pins, and user-facing docs.
+
+## Decisions and open questions
+
+- **Qualified V2 version:** `2.0.26` (verified live here). The user also has
+  `2.0.24`; it falls inside the `2.0.x` window but is not the pinned
+  qualification. Add it explicitly if an operator needs it.
+- **Sandbox/provider pack:** the remote pack still installs the pinned V1 build
+  (`opencode-ai@1.18.34`); the runner runtime accepts the V1+V2 window. Putting
+  V2 into the sandbox/provider pack is deferred to Phase 4 so the bundled binary
+  and its qualification tests move together.
+- **V2 forms vs V1 questions:** mapped one-to-one. A V2 `Form.Field` becomes a
+  native question (`fieldType`/`type` preserved) and the reply is rebuilt as a
+  `Form.Answer` keyed by field `key`.
+- **`V2EventEncoded`:** the OpenAPI schema is an opaque JSON string; the real
+  event union was taken from a live stream rather than the published schema.
+- **`opencode-ai` npm pin:** kept at `1.18.34` (bundled V1) to avoid a lockfile
+  and bundled-binary change; the runtime gate and driver support the V2 window.
