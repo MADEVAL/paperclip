@@ -2372,6 +2372,53 @@ async function startRuntime(input: {
           `OpenCode V2 config reload failed; continuing with the V1-compatible config. ${redact(String(error), sensitiveValues)}`,
         );
       }
+      // V2 does not auto-connect MCP servers, and registration after a reload
+      // is asynchronous. Nudge each server with an explicit connect, then wait
+      // for the Paperclip servers to report connected so the first session
+      // exposes the semantic tools to the model.
+      const expectedMcp = [
+        "paperclip",
+        ...(assignedMcp ? [assignedMcp.name] : []),
+      ];
+      for (const name of expectedMcp) {
+        try {
+          await api(
+            fetcher,
+            apiContext,
+            `/api/experimental/mcp/${encodeURIComponent(name)}/connect`,
+            { method: "POST", body: JSON.stringify({}) },
+          );
+        } catch {
+          /* the connect endpoint is best-effort; the poll below is authoritative */
+        }
+      }
+      const mcpDeadline = Date.now() + 10_000;
+      let mcpReady = false;
+      while (!mcpReady && Date.now() < mcpDeadline) {
+        try {
+          const listing = record(
+            await api(fetcher, apiContext, "/api/mcp"),
+          );
+          const statuses = new Map(
+            arrayOfRecords(listing.data).map((server) => [
+              text(server.name),
+              text(record(server.status).status),
+            ]),
+          );
+          mcpReady = expectedMcp.every(
+            (name) => statuses.get(name) === "connected",
+          );
+        } catch {
+          /* the location is still reloading */
+        }
+        if (!mcpReady)
+          await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (!mcpReady) {
+        input.options.onDiagnostic?.(
+          `OpenCode V2 MCP servers did not report connected before the session started (${expectedMcp.join(", ")}).`,
+        );
+      }
     }
     return {
       baseUrl,
@@ -2879,6 +2926,10 @@ function openCodeV2McpServer(
     url,
     disabled: false,
     oauth: false,
+    // V2 Code Mode would group the Paperclip tools behind a code-execution
+    // tool. The runner contract requires the model to call the semantic tools
+    // directly, so keep them on the provider's native tool list.
+    codemode: false,
     headers: { Authorization: `Bearer ${secret}` },
     timeout: { catalog: 30_000, execution: 30_000 },
   };
@@ -3015,6 +3066,9 @@ function bounded(value: unknown): Record<string, unknown> {
 
 function record(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
+}
+function arrayOfRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(record) : [];
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

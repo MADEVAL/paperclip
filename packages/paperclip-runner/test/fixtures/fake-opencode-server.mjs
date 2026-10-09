@@ -347,6 +347,18 @@ async function handleV2(request, response) {
     return json(response, 200, { data: [] });
   if (request.method === "GET" && url === "/api/session/active")
     return json(response, 200, { data: {} });
+  if (request.method === "GET" && url === "/api/mcp") {
+    const names = Object.keys(runtimeConfig.mcp?.servers ?? runtimeConfig.mcp ?? {});
+    return json(response, 200, {
+      location: { directory: process.cwd() },
+      data: names.map((name) => ({ name, status: { status: "connected" } })),
+    });
+  }
+  if (request.method === "POST" && url.startsWith("/api/experimental/mcp/")) {
+    response.statusCode = 204;
+    response.end();
+    return;
+  }
   if (request.method === "GET" && url === "/api/permission/request")
     return json(response, 200, {
       location: { directory: process.cwd() },
