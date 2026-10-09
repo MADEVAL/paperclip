@@ -79,11 +79,34 @@ import {
 } from "./mcp-bridge.js";
 import { nativeMcpLaunchBinding } from "../native-mcp.js";
 import { materializeNativeRuntimeSkills } from "../runtime-context-materializer.js";
+import {
+  QUALIFIED_OPENCODE_V1_VERSION,
+  QUALIFIED_OPENCODE_V2_VERSION,
+  allowsUnqualifiedOpenCodeRunnerVersion,
+  classifyOpenCodeServerInfo,
+  createOpenCodeApiClient,
+  isQualifiedOpenCodeVersion,
+  openCodeQuestionId,
+  protocolVersionForApiVersion,
+  unqualifiedOpenCodeVersionMessage,
+  type OpenCodeApiClient,
+  type OpenCodeApiVersion,
+  type OpenCodePermissionAction,
+} from "./api-client.js";
 
 export const OPENCODE_SERVER_DRIVER_KIND = "opencode_server" as const;
-export const QUALIFIED_OPENCODE_VERSION = "1.18.34" as const;
+/** Back-compat export: the historical V1 qualification pin. */
+export const QUALIFIED_OPENCODE_VERSION = QUALIFIED_OPENCODE_V1_VERSION;
+export const QUALIFIED_OPENCODE_V2_RUNNER_VERSION =
+  QUALIFIED_OPENCODE_V2_VERSION;
 export const QUALIFIED_OPENCODE_MODEL =
   "openrouter/deepseek/deepseek-v4-flash-0731" as const;
+/**
+ * V2 carries the system prompt on the selected agent, so the driver defines
+ * one dedicated agent instead of re-sending instructions on every prompt.
+ * V1 keeps using the per-prompt `system` field.
+ */
+const OPEN_CODE_RUNNER_AGENT = "paperclip" as const;
 
 /** Resolve a declared, pinned native dependency without PATH or install fallback. */
 export function resolvePinnedOpenCodeCommand(
@@ -200,6 +223,9 @@ interface OpenCodeRuntime {
   baseUrl: string;
   authHeader: string;
   version: string;
+  apiVersion: OpenCodeApiVersion;
+  protocolVersion: "http+sse/v1" | "http+sse/v2";
+  client: OpenCodeApiClient;
   permissionMode: "allow" | "ask" | "deny";
   process: ChildProcess;
   bridge: OpenCodeMcpBridge;
@@ -209,6 +235,14 @@ interface OpenCodeRuntime {
     finalizeTrace?: boolean;
     reason?: string | null;
   }): Promise<void>;
+}
+
+/** The transport-facing subset of the runtime that `api` needs. */
+interface OpenCodeApiContext {
+  baseUrl: string;
+  authHeader: string;
+  trace: ProviderTraceFileSink | null;
+  sensitiveValues: readonly string[];
 }
 
 const CAPABILITIES: NativeSessionCapabilities = {
@@ -383,23 +417,23 @@ export class OpenCodeServerDriver implements HarnessDriver {
             return session.dispatchTool(call);
           },
         });
+        const [modelProvider, ...modelIdParts] = this.#options.model.split("/");
+        const modelID = modelIdParts.join("/");
         const fetcher = this.#options.fetch ?? globalThis.fetch;
         let providerSessionId =
           snapshot?.providerSessionId ?? snapshot?.driverSessionId ?? null;
         if (providerSessionId !== null) {
-          const existing = await api(
-            fetcher,
-            runtime,
-            `/session/${encodeURIComponent(providerSessionId)}`,
-          );
-          if (!isRecord(existing) || text(existing.id) !== providerSessionId)
+          const existing = await runtime.client.getSession(providerSessionId);
+          if (text(existing.id) !== providerSessionId)
             throw new Error("OpenCode resumed a different session");
         } else {
-          const created = await api(fetcher, runtime, "/session", {
-            method: "POST",
-            body: JSON.stringify({ title: `Paperclip ${input.runId}` }),
+          const created = await runtime.client.createSession({
+            title: `Paperclip ${input.runId}`,
+            providerID: modelProvider ?? "",
+            modelID,
+            ...(runtime.apiVersion === "v2" ? { agent: OPEN_CODE_RUNNER_AGENT } : {}),
           });
-          providerSessionId = text(record(created).id);
+          providerSessionId = text(created.id);
           if (!providerSessionId)
             throw new Error("OpenCode session creation omitted its id");
         }
@@ -569,7 +603,7 @@ class OpenCodeHarnessSession implements HarnessSession {
       driverSessionId: input.providerSessionId,
       providerSessionId: input.providerSessionId,
       context: {
-        protocolVersion: "http+sse/v1",
+        protocolVersion: input.runtime.protocolVersion,
         opencodeVersion: input.runtime.version,
         model: input.model,
         modelProvider: input.model.split("/", 1)[0],
@@ -667,31 +701,19 @@ class OpenCodeHarnessSession implements HarnessSession {
           message: input.message.text,
         })
       : input.message.text;
-    await api(
-      this.#fetch,
-      this.#runtime,
-      `/session/${encodeURIComponent(this.#providerSessionId)}/prompt_async`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          // OpenCode 1.18's PromptPayload carries the provider and model at the
-          // top level.  Older examples used a nested `model` object; 1.18
-          // silently ignores that shape and falls back to the configured model,
-          // which can turn `openrouter/deepseek/...` into a duplicated provider
-          // lookup. Keep Paperclip's persisted provider/model form, but adapt it
-          // at this HTTP boundary.
-          providerID,
-          modelID,
-          // Keep question enabled in the isolated config. OpenCode 1.18.32
-          // turns a prompt's deprecated `tools` map into replacement session
-          // permissions, so a sparse override here discards the session policy.
-          ...(this.#sendFullContext
-            ? { system: this.#systemInstructions }
-            : {}),
-          parts: [{ type: "text", text: prompt }],
-        }),
-      },
-    );
+    await this.#runtime.client.prompt({
+      sessionId: this.#providerSessionId,
+      providerID,
+      modelID,
+      prompt,
+      // A resumed OpenCode provider session already retains the original system
+      // instructions and task envelope in its conversation. Repeating both on
+      // every Paperclip continuation can overflow smaller context windows and
+      // OpenCode then completes with `finish: unknown` and zero tokens. V2
+      // receives the instructions through the selected agent instead, so its
+      // client ignores this field.
+      ...(this.#sendFullContext ? { system: this.#systemInstructions } : {}),
+    });
     this.#sendFullContext = false;
     return { turnId };
   }
@@ -704,12 +726,7 @@ class OpenCodeHarnessSession implements HarnessSession {
       input.turnId !== this.#activeTurnId
     )
       throw new Error("stale OpenCode turn");
-    await api(
-      this.#fetch,
-      this.#runtime,
-      `/session/${encodeURIComponent(this.#providerSessionId)}/abort`,
-      { method: "POST" },
-    );
+    await this.#runtime.client.interrupt(this.#providerSessionId);
   }
 
   pendingRuntimeRequests(): HarnessRuntimeRequest[] {
@@ -755,9 +772,9 @@ class OpenCodeHarnessSession implements HarnessSession {
         throw error;
       }
     };
-    const workspace = `directory=${encodeURIComponent(this.#workingDirectory)}`;
+    const client = this.#runtime.client;
     if (pending.request.requestKind === "permission_approval") {
-      const action =
+      const action: OpenCodePermissionAction =
         resolution.action === "accept" ||
         resolution.action === "accept_for_session"
           ? resolution.action
@@ -766,22 +783,11 @@ class OpenCodeHarnessSession implements HarnessSession {
             : "decline";
       pending.submittedAction = action;
       await submit(
-        api(
-          this.#fetch,
-          this.#runtime,
-          `/permission/${encodeURIComponent(input.requestId)}/reply?${workspace}`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              reply:
-                action === "accept"
-                  ? "once"
-                  : action === "accept_for_session"
-                    ? "always"
-                    : "reject",
-            }),
-          },
-        ),
+        client.replyPermission({
+          sessionId: this.#providerSessionId,
+          requestId: input.requestId,
+          action,
+        }),
       );
       if (!this.#pendingRuntimeRequests.delete(input.requestId)) return;
       this.#emit(
@@ -794,37 +800,34 @@ class OpenCodeHarnessSession implements HarnessSession {
       );
       return;
     }
-    const base = `/question/${encodeURIComponent(input.requestId)}`;
     if (resolution.action === "submit" && "response" in resolution) {
       // OpenCode can broadcast question.replied before the reply HTTP request
       // returns. Retain the canonical response before crossing that boundary
       // so the racing terminal event carries the same durable answer record.
       pending.submittedResponse = structuredClone(resolution.response);
       await submit(
-        api(this.#fetch, this.#runtime, `${base}/reply?${workspace}`, {
-          method: "POST",
-          body: JSON.stringify({
-            answers: openCodeAnswers(pending, resolution.response),
-          }),
+        client.replyQuestion({
+          sessionId: this.#providerSessionId,
+          requestId: input.requestId,
+          response: resolution.response,
+          nativeQuestions: pending.nativeQuestions,
+          answers: openCodeAnswers(pending, resolution.response),
         }),
       );
     } else if (resolution.action === "submit" && "answers" in resolution) {
       await submit(
-        api(this.#fetch, this.#runtime, `${base}/reply?${workspace}`, {
-          method: "POST",
-          body: JSON.stringify({
-            answers: pending.nativeQuestions.map(
-              (question, index) =>
-                resolution.answers[openCodeQuestionId(question, index)]
-                  ?.answers ?? [],
-            ),
-          }),
+        client.replyQuestionAnswers({
+          sessionId: this.#providerSessionId,
+          requestId: input.requestId,
+          nativeQuestions: pending.nativeQuestions,
+          answers: resolution.answers,
         }),
       );
     } else {
       await submit(
-        api(this.#fetch, this.#runtime, `${base}/reject?${workspace}`, {
-          method: "POST",
+        client.rejectQuestion({
+          sessionId: this.#providerSessionId,
+          requestId: input.requestId,
         }),
       );
     }
@@ -871,38 +874,28 @@ class OpenCodeHarnessSession implements HarnessSession {
       harnessRuntimeInputExpiredOutcome(pending.request, input.reason),
       { turnId: input.turnId, itemId: pending.request.itemId },
     );
-    const workspace = `directory=${encodeURIComponent(this.#workingDirectory)}`;
     const cleanup = Promise.allSettled([
-      api(
-        this.#fetch,
-        this.#runtime,
-        `/question/${encodeURIComponent(input.requestId)}/reject?${workspace}`,
-        { method: "POST" },
-      ),
-      api(
-        this.#fetch,
-        this.#runtime,
-        `/session/${encodeURIComponent(this.#providerSessionId)}/abort`,
-        { method: "POST" },
-      ),
+      this.#runtime.client.rejectQuestion({
+        sessionId: this.#providerSessionId,
+        requestId: input.requestId,
+      }),
+      this.#runtime.client.interrupt(this.#providerSessionId),
     ]).then(() => undefined);
     return { result: "handed_off", cleanup };
   }
 
   async read(): Promise<Record<string, unknown>> {
-    const messages = await api(
-      this.#fetch,
-      this.#runtime,
-      `/session/${encodeURIComponent(this.#providerSessionId)}/message`,
+    const messages = await this.#runtime.client.messages(
+      this.#providerSessionId,
     );
     return { sessionId: this.#providerSessionId, messages };
   }
 
   async reconcile(): Promise<Record<string, unknown>> {
-    const status = await api(this.#fetch, this.#runtime, "/session/status");
+    const active = await this.#runtime.client.activeSessionIds();
     return {
       sessionId: this.#providerSessionId,
-      status: record(status)[this.#providerSessionId] ?? null,
+      status: active.has(this.#providerSessionId) ? { type: "running" } : null,
     };
   }
 
@@ -1150,31 +1143,18 @@ class OpenCodeHarnessSession implements HarnessSession {
 
   async #recoverPendingRuntimeRequests(): Promise<void> {
     await this.#recoverPendingQuestions();
-    const value = await api(
-      this.#fetch,
-      this.#runtime,
-      `/permission?directory=${encodeURIComponent(this.#workingDirectory)}`,
-    );
-    const pending = Array.isArray(value)
-      ? value
-      : Array.isArray(record(value).permissions)
-        ? (record(value).permissions as unknown[])
-        : [];
-    for (const entry of pending)
-      this.#acceptPermission(record(entry), "permission.recovered");
+    const pending = await this.#runtime.client.listPendingPermissions();
+    for (const entry of pending) {
+      const sessionId = text(entry.sessionID, text(entry.sessionId));
+      if (sessionId && sessionId !== this.#providerSessionId) continue;
+      this.#acceptPermission(entry, "permission.recovered");
+    }
   }
 
   async #recoverPendingQuestions(): Promise<void> {
-    const value = await api(
-      this.#fetch,
-      this.#runtime,
-      `/question?directory=${encodeURIComponent(this.#workingDirectory)}`,
+    const pending = await this.#runtime.client.listPendingQuestions(
+      this.#providerSessionId,
     );
-    const pending = Array.isArray(value)
-      ? value
-      : Array.isArray(record(value).questions)
-        ? (record(value).questions as unknown[])
-        : [];
     for (const entry of pending) {
       const question = record(entry);
       const sessionId = text(question.sessionID, text(question.sessionId));
@@ -1317,15 +1297,19 @@ class OpenCodeHarnessSession implements HarnessSession {
 
   async #pumpEvents(): Promise<void> {
     let attempts = 0;
+    const client = this.#runtime.client;
     while (!this.#closed && !this.#abort.signal.aborted) {
       try {
-        const response = await this.#fetch(`${this.#runtime.baseUrl}/event`, {
-          headers: {
-            Authorization: this.#runtime.authHeader,
-            Accept: "text/event-stream",
+        const response = await this.#fetch(
+          `${this.#runtime.baseUrl}${client.eventPath}`,
+          {
+            headers: {
+              Authorization: this.#runtime.authHeader,
+              Accept: "text/event-stream",
+            },
+            signal: this.#abort.signal,
           },
-          signal: this.#abort.signal,
-        });
+        );
         if (!response.ok || !response.body)
           throw new Error(
             `OpenCode event stream returned HTTP ${response.status}`,
@@ -1334,13 +1318,13 @@ class OpenCodeHarnessSession implements HarnessSession {
           direction: "client_to_provider",
           raw: "",
           transport: "http_sse",
-          nativeMethod: "GET /event",
+          nativeMethod: `GET ${client.eventPath}`,
         });
         if (outboundFrameId) {
           this.#runtime.trace?.interpretation({
             frameId: outboundFrameId,
             stage: "typescript_opencode_http_transport",
-            ruleId: "opencode.http.GET_event",
+            ruleId: `opencode.http.GET_${safeTraceRulePath(client.eventPath)}`,
             disposition: "operator_only",
             reason: "Opened the OpenCode server-sent event stream",
           });
@@ -1352,7 +1336,7 @@ class OpenCodeHarnessSession implements HarnessSession {
               direction: "provider_to_client",
               raw: frame.raw,
               transport: "http_sse",
-              nativeMethod: "SSE /event",
+              nativeMethod: client.eventTraceMethod,
             }) ?? null;
           let event: unknown;
           try {
@@ -1387,17 +1371,23 @@ class OpenCodeHarnessSession implements HarnessSession {
             }
             throw error;
           }
-          const type = text(record(event).type);
-          const properties = record(record(event).properties);
-          if (type === "session.idle" || type === "session.error"
-            || (type === "session.status" && text(record(record(event).properties).status && record(record(record(event).properties).status).type) === "idle")) {
-            // Do not seal the turn while its bound controller is deciding a
-            // finishing call. Acceptance/rejection and the tool result must
-            // precede the provider's terminal event.
-            await this.#completionSettlement;
-            if (this.#closed) return;
+          for (const providerEvent of client.normalizeEvent(event)) {
+            const type = text(record(providerEvent).type);
+            const properties = record(record(providerEvent).properties);
+            if (
+              type === "session.idle" ||
+              type === "session.error" ||
+              (type === "session.status" &&
+                text(record(record(properties).status).type) === "idle")
+            ) {
+              // Do not seal the turn while its bound controller is deciding a
+              // finishing call. Acceptance/rejection and the tool result must
+              // precede the provider's terminal event.
+              await this.#completionSettlement;
+              if (this.#closed) return;
+            }
+            this.#mapProviderEvent(providerEvent, frameId);
           }
-          this.#mapProviderEvent(event, frameId);
         }
         throw new Error(
           "OpenCode event stream closed before the session became terminal",
@@ -2157,7 +2147,7 @@ async function startRuntime(input: {
 }): Promise<OpenCodeRuntime> {
   const port = await reservePort();
   const password = randomBytes(32).toString("base64url");
-  const username = "paperclip";
+  const username = "opencode";
   const authHeader = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
   const configHome = join(input.root, "config");
   const dataHome = join(input.root, "data");
@@ -2233,71 +2223,24 @@ async function startRuntime(input: {
     input.trace?.addSensitiveValues([providerProxy.token]);
   }
   let child: ChildProcess | undefined;
+  const configPath = join(configHome, "opencode", "opencode.json");
+  const configInput = {
+    options: input.options,
+    modelProvider: modelProvider!,
+    providerModelId,
+    providerProxy,
+    externalDirectories,
+    bridge,
+    assignedMcp,
+  } as const;
   try {
-    const config = {
-      $schema: "https://opencode.ai/config.json",
-      model: input.options.model,
-      small_model: input.options.model,
-      share: "disabled",
-      // The configured entry is already composed exactly once into the session
-      // system prompt; siblings remain available through the read-only root.
-      instructions: [],
-      plugin: [],
-      // OpenCode's bundled models.dev snapshot can lag behind OpenRouter's live
-      // catalog. Bind the already-qualified exact model slug into the built-in
-      // provider instead of silently falling back or rejecting a newer model.
-      provider: {
-        [modelProvider!]: {
-          ...(providerProxy ? {
-            npm: "@ai-sdk/openai-compatible",
-            name: "Paperclip connection",
-            options: {
-              baseURL: providerProxy.baseURL,
-              apiKey: providerProxy.token,
-            },
-          } : {}),
-          models: {
-            [providerModelId]: { name: providerModelId },
-          },
-        },
-      },
-      tools: {
-        question: true,
-      },
-      permission: {
-        "*": input.options.permissionMode ?? "allow",
-        question: "allow",
-        "paperclip_*": "allow",
-        "mcp__paperclip__*": "allow",
-        external_directory: externalDirectories,
-      },
-      mcp: {
-        paperclip: {
-          type: "remote",
-          url: bridge.url,
-          enabled: true,
-          oauth: false,
-          headers: { Authorization: `Bearer ${bridge.secret}` },
-          timeout: 30_000,
-        },
-        ...(assignedMcp
-          ? {
-              [assignedMcp.name]: {
-                type: "remote",
-                url: assignedMcp.url,
-                enabled: true,
-                oauth: false,
-                headers: { Authorization: `Bearer ${assignedMcp.token}` },
-                timeout: 30_000,
-              },
-            }
-          : {}),
-      },
-    };
-    await writeFile(
-      join(configHome, "opencode", "opencode.json"),
-      `${JSON.stringify(config, null, 2)}\n`,
-      { mode: 0o600 },
+    // OpenCode V1 and V2 read the same config path but want different shapes.
+    // V2 normalizes the V1 shape through its compatibility layer, so bootstrap
+    // with V1 (which also keeps the V1 path byte-identical) and, once the server
+    // reports V2, rewrite the native shape and reload the location.
+    await writeOpenCodeConfig(
+      configPath,
+      buildOpenCodeConfig({ ...configInput, apiVersion: "v1" }),
     );
     const environment = sanitizedEnvironment(
       input.options.environment ?? process.env,
@@ -2375,30 +2318,68 @@ async function startRuntime(input: {
         startedAt: new Date().toISOString(),
       });
     const baseUrl = `http://127.0.0.1:${port}`;
-    const health = await waitForHealth(
+    const fetcher = input.options.fetch ?? globalThis.fetch;
+    const detected = await waitForServerInfo(
       baseUrl,
       authHeader,
-      input.options.fetch ?? globalThis.fetch,
+      fetcher,
       child,
       () => diagnostics,
       input.trace,
     );
-    const version = text(record(health).version);
-    if (!/^\d+\.\d+\.\d+$/.test(version))
-      throw new Error("OpenCode health response omitted a semantic version");
-    const qualifiedComparison = compareVersion(
-      version,
-      QUALIFIED_OPENCODE_VERSION,
-    );
-    if (qualifiedComparison !== 0) {
-      throw new Error(
-        `OpenCode ${version} is not the question-conformance-qualified ${QUALIFIED_OPENCODE_VERSION}`,
+    const classified = classifyOpenCodeServerInfo({
+      version: text(record(detected.value).version),
+      apiVersion: detected.apiVersion,
+    });
+    if (!classified)
+      throw new Error("OpenCode server-info response omitted a semantic version");
+    const { version, apiVersion } = classified;
+    if (
+      !isQualifiedOpenCodeVersion(version) &&
+      !allowsUnqualifiedOpenCodeRunnerVersion(
+        input.options.environment ?? process.env,
+      )
+    ) {
+      throw new Error(unqualifiedOpenCodeVersionMessage(version));
+    }
+    const apiContext: OpenCodeApiContext = {
+      baseUrl,
+      authHeader,
+      trace: input.trace,
+      sensitiveValues,
+    };
+    const protocolVersion = protocolVersionForApiVersion(apiVersion);
+    const client = createOpenCodeApiClient({
+      apiVersion,
+      transport: {
+        request: (path, init) => api(fetcher, apiContext, path, init),
+      },
+      directory: input.cwd,
+    });
+    if (apiVersion === "v2") {
+      // Apply the native V2 shape now that the server version is known.
+      await writeOpenCodeConfig(
+        configPath,
+        buildOpenCodeConfig({ ...configInput, apiVersion: "v2" }),
       );
+      try {
+        await api(fetcher, apiContext, "/api/location/reload", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+      } catch (error) {
+        input.options.onDiagnostic?.(
+          `OpenCode V2 config reload failed; continuing with the V1-compatible config. ${redact(String(error), sensitiveValues)}`,
+        );
+      }
     }
     return {
       baseUrl,
       authHeader,
       version,
+      apiVersion,
+      protocolVersion,
+      client,
       permissionMode: input.options.permissionMode ?? "allow",
       process: child,
       bridge,
@@ -2539,24 +2520,9 @@ function openCodeAnswers(
   });
 }
 
-function openCodeQuestionId(
-  question: Record<string, unknown>,
-  index: number,
-): string {
-  const nativeId = text(question.id).trim();
-  if (nativeId) return nativeId.slice(0, 160);
-  const header = text(question.header)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._:-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 160);
-  return header || `question-${index + 1}`;
-}
-
 async function api(
   fetcher: typeof globalThis.fetch,
-  runtime: OpenCodeRuntime,
+  runtime: OpenCodeApiContext,
   path: string,
   init: RequestInit = {},
 ): Promise<unknown> {
@@ -2684,14 +2650,14 @@ function retryableOpenCodeStartupError(error: unknown): boolean {
   );
 }
 
-async function waitForHealth(
+async function waitForServerInfo(
   baseUrl: string,
   authHeader: string,
   fetcher: typeof globalThis.fetch,
   process: ChildProcess,
   diagnostics: () => string,
   trace: ProviderTraceFileSink | null,
-): Promise<unknown> {
+): Promise<{ value: unknown; apiVersion: OpenCodeApiVersion }> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (process.exitCode !== null || process.signalCode !== null) {
@@ -2700,34 +2666,40 @@ async function waitForHealth(
         `provider_process_exited: provider=opencode stage=health exitCode=${process.exitCode ?? "null"} signal=${process.signalCode ?? "null"}${detail ? ` stderrTail=${detail}` : ""}`,
       );
     }
-    try {
-      const requestFrameId = trace?.frame({
-        direction: "client_to_provider",
-        raw: "",
-        transport: "http_json",
-        nativeMethod: "GET /global/health",
-      });
-      if (requestFrameId) {
-        trace?.interpretation({
-          frameId: requestFrameId,
-          stage: "typescript_opencode_http_transport",
-          ruleId: "opencode.http.GET_global_health",
-          disposition: "operator_only",
-          reason: "Probed the local OpenCode app-server health endpoint",
+    // V2 answers `/api/info`; V1 answers `/global/health`. Probe V2 first so a
+    // single server is identified without a version preflight.
+    for (const probe of [
+      { path: "/api/info", apiVersion: "v2" as const, ruleId: "opencode.http.GET_api_info" },
+      { path: "/global/health", apiVersion: "v1" as const, ruleId: "opencode.http.GET_global_health" },
+    ]) {
+      try {
+        const requestFrameId = trace?.frame({
+          direction: "client_to_provider",
+          raw: "",
+          transport: "http_json",
+          nativeMethod: `GET ${probe.path}`,
         });
-      }
-      const response = await fetcher(`${baseUrl}/global/health`, {
-        headers: { Authorization: authHeader },
-        signal: AbortSignal.timeout(1_000),
-      });
-      const raw = await response.text();
-      const responseFrameId = trace?.frame({
-        direction: "provider_to_client",
-        raw,
-        transport: "http_json",
-        nativeMethod: `GET /global/health ${response.status}`,
-      });
-      if (response.ok) {
+        if (requestFrameId) {
+          trace?.interpretation({
+            frameId: requestFrameId,
+            stage: "typescript_opencode_http_transport",
+            ruleId: probe.ruleId,
+            disposition: "operator_only",
+            reason: "Probed the local OpenCode app-server info endpoint",
+          });
+        }
+        const response = await fetcher(`${baseUrl}${probe.path}`, {
+          headers: { Authorization: authHeader },
+          signal: AbortSignal.timeout(1_000),
+        });
+        const raw = await response.text();
+        const responseFrameId = trace?.frame({
+          direction: "provider_to_client",
+          raw,
+          transport: "http_json",
+          nativeMethod: `GET ${probe.path} ${response.status}`,
+        });
+        if (!response.ok) continue;
         const parsed = JSON.parse(raw) as unknown;
         if (responseFrameId) {
           trace?.interpretation({
@@ -2735,13 +2707,13 @@ async function waitForHealth(
             stage: "typescript_opencode_http_parse",
             ruleId: "opencode.http.health_success",
             disposition: "operator_only",
-            reason: "OpenCode health response parsed successfully",
+            reason: "OpenCode server-info response parsed successfully",
           });
         }
-        return parsed;
+        return { value: parsed, apiVersion: probe.apiVersion };
+      } catch {
+        /* server is still starting */
       }
-    } catch {
-      /* server is still starting */
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -2749,6 +2721,167 @@ async function waitForHealth(
   throw new Error(
     `provider_initialize_timeout: provider=opencode stage=health${detail ? ` stderrTail=${detail}` : ""}`,
   );
+}
+
+async function writeOpenCodeConfig(
+  path: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, {
+    mode: 0o600,
+  });
+}
+
+function buildOpenCodeConfig(input: {
+  apiVersion: OpenCodeApiVersion;
+  options: OpenCodeServerDriverOptions;
+  modelProvider: string;
+  providerModelId: string;
+  providerProxy: { baseURL: string; token: string } | null;
+  externalDirectories: Record<string, string>;
+  bridge: OpenCodeMcpBridge;
+  assignedMcp: ReturnType<typeof nativeMcpLaunchBinding>;
+}): Record<string, unknown> {
+  const permissionMode = input.options.permissionMode ?? "allow";
+  const systemInstructions =
+    input.options.systemInstructions ?? CODEX_SKILLLESS_BASE_INSTRUCTIONS;
+  if (input.apiVersion === "v2") {
+    const externalRules = Object.entries(input.externalDirectories)
+      .filter(([resource]) => resource !== "*")
+      .map(([resource, effect]) => ({
+        action: "external_directory",
+        resource,
+        effect,
+      }));
+    return {
+      $schema: "https://opencode.ai/config.json",
+      model: input.options.model,
+      agents: {
+        [OPEN_CODE_RUNNER_AGENT]: { system: systemInstructions },
+        title: { model: input.options.model },
+      },
+      share: "disabled",
+      // The configured entry is already composed exactly once into the session
+      // system prompt; siblings remain available through the read-only root.
+      instructions: [],
+      plugins: [],
+      // OpenCode's bundled models.dev snapshot can lag behind OpenRouter's live
+      // catalog. Bind the already-qualified exact model slug into the built-in
+      // provider instead of silently falling back or rejecting a newer model.
+      providers: {
+        [input.modelProvider]: {
+          ...(input.providerProxy
+            ? {
+                package: "aisdk:@ai-sdk/openai-compatible",
+                name: "Paperclip connection",
+                settings: {
+                  baseURL: input.providerProxy.baseURL,
+                  apiKey: input.providerProxy.token,
+                },
+              }
+            : {}),
+          models: {
+            [input.providerModelId]: { name: input.providerModelId },
+          },
+        },
+      },
+      // V2 uses one ordered rule list; the last match wins. Mirror the V1
+      // permission map: broad policy first, then the Paperclip and directory
+      // exceptions.
+      permissions: [
+        { action: "*", resource: "*", effect: permissionMode },
+        { action: "question", resource: "*", effect: "allow" },
+        { action: "paperclip_*", resource: "*", effect: "allow" },
+        { action: "mcp__paperclip__*", resource: "*", effect: "allow" },
+        { action: "external_directory", resource: "*", effect: "deny" },
+        ...externalRules,
+      ],
+      mcp: {
+        servers: {
+          paperclip: openCodeV2McpServer(input.bridge.url, input.bridge.secret),
+          ...(input.assignedMcp
+            ? {
+                [input.assignedMcp.name]: openCodeV2McpServer(
+                  input.assignedMcp.url,
+                  input.assignedMcp.token,
+                ),
+              }
+            : {}),
+        },
+      },
+    };
+  }
+  return {
+    $schema: "https://opencode.ai/config.json",
+    model: input.options.model,
+    small_model: input.options.model,
+    share: "disabled",
+    instructions: [],
+    plugin: [],
+    provider: {
+      [input.modelProvider]: {
+        ...(input.providerProxy
+          ? {
+              npm: "@ai-sdk/openai-compatible",
+              name: "Paperclip connection",
+              options: {
+                baseURL: input.providerProxy.baseURL,
+                apiKey: input.providerProxy.token,
+              },
+            }
+          : {}),
+        models: {
+          [input.providerModelId]: { name: input.providerModelId },
+        },
+      },
+    },
+    tools: {
+      question: true,
+    },
+    permission: {
+      "*": permissionMode,
+      question: "allow",
+      "paperclip_*": "allow",
+      "mcp__paperclip__*": "allow",
+      external_directory: input.externalDirectories,
+    },
+    mcp: {
+      paperclip: {
+        type: "remote",
+        url: input.bridge.url,
+        enabled: true,
+        oauth: false,
+        headers: { Authorization: `Bearer ${input.bridge.secret}` },
+        timeout: 30_000,
+      },
+      ...(input.assignedMcp
+        ? {
+            [input.assignedMcp.name]: {
+              type: "remote",
+              url: input.assignedMcp.url,
+              enabled: true,
+              oauth: false,
+              headers: { Authorization: `Bearer ${input.assignedMcp.token}` },
+              timeout: 30_000,
+            },
+          }
+        : {}),
+    },
+  };
+}
+
+function openCodeV2McpServer(
+  url: string,
+  secret: string,
+): Record<string, unknown> {
+  return {
+    type: "remote",
+    url,
+    disabled: false,
+    oauth: false,
+    headers: { Authorization: `Bearer ${secret}` },
+    timeout: { catalog: 30_000, execution: 30_000 },
+  };
 }
 
 async function reservePort(): Promise<number> {
@@ -2819,6 +2952,8 @@ function sanitizedEnvironment(
     "SSL_CERT_DIR",
     "OPENROUTER_API_KEY",
     "OPENCODE_ALLOW_ALL_MODELS",
+    // Test harness signal that selects the fake server's protocol generation.
+    "FAKE_OPENCODE_API",
   ];
   const result: NodeJS.ProcessEnv = {};
   for (const key of allowed)
@@ -2841,6 +2976,8 @@ function sanitizedEnvironmentKeys(): string[] {
     "SSL_CERT_DIR",
     "OPENROUTER_API_KEY",
     "OPENCODE_ALLOW_ALL_MODELS",
+    // Test harness signal that selects the fake server's protocol generation.
+    "FAKE_OPENCODE_API",
   ];
 }
 
@@ -2866,15 +3003,6 @@ function validateWorkspace(value: string): string {
 function validModel(value: string): boolean {
   const slash = value.indexOf("/");
   return slash > 0 && slash < value.length - 1;
-}
-
-function compareVersion(left: string, right: string): number {
-  const a = left.split(".").map(Number);
-  const b = right.split(".").map(Number);
-  for (let index = 0; index < 3; index += 1) {
-    if (a[index] !== b[index]) return (a[index] ?? 0) - (b[index] ?? 0);
-  }
-  return 0;
 }
 
 function bounded(value: unknown): Record<string, unknown> {
