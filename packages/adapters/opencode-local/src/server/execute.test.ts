@@ -430,6 +430,19 @@ describe("OpenCode version guard", () => {
     expect(args).not.toContain("--variant");
   });
 
+  it.each(["1.18.34", "2.0.26"])("auto-approves permissions on the run by default (%s)", async (version) => {
+    const [major, minor, patch] = version.split(".").map(Number);
+    versionProbeMock.mockResolvedValue({ version, major, minor, patch, supported: true });
+    await callExecute();
+    expect(lastExecutionArgs()).toContain("--auto");
+  });
+
+  it("omits --auto when headless skip-permissions is disabled", async () => {
+    versionProbeMock.mockResolvedValue({ version: "1.18.34", major: 1, minor: 18, patch: 34, supported: true });
+    await callExecute({}, { dangerouslySkipPermissions: false });
+    expect(lastExecutionArgs()).not.toContain("--auto");
+  });
+
   it("allows an unverified major version when the escape hatch is set", async () => {
     versionProbeMock.mockResolvedValue({ version: "3.0.1", major: 3, minor: 0, patch: 1, supported: false });
     const result = await callExecute({ PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION: "1" });

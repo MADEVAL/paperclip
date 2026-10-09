@@ -30,6 +30,7 @@ import {
 import {
   asString,
   asNumber,
+  asBoolean,
   asStringArray,
   parseObject,
   buildPaperclipEnv,
@@ -338,7 +339,27 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   let openCodeCliVersionNote: string | null = null;
   let openCodeCliVersion: OpenCodeCliVersion | null = null;
-  const preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({ env, config });
+  // OpenCode 1.x rejects the V2 `permissions` key and 2.x gives native
+  // `permissions` precedence over the V1 `permission` string. Probe the CLI
+  // major before writing the runtime config so the injected permission shape
+  // matches the installed generation. A failed preflight (command not yet
+  // installed) falls back to the V1 shape, which 2.x still normalizes.
+  const preflightCliVersion = executionTargetIsRemote
+    ? null
+    : await probeOpenCodeCliVersion({
+        command,
+        cwd,
+        env: Object.fromEntries(
+          Object.entries(ensurePathInEnv({ ...process.env, ...env })).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string",
+          ),
+        ),
+      });
+  const preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({
+    env,
+    config,
+    openCodeV2: usesOpenCodeV2Cli(preflightCliVersion),
+  });
   const localRuntimeConfigHome =
     preparedRuntimeConfig.notes.length > 0 ? preparedRuntimeConfig.env.XDG_CONFIG_HOME : "";
   try {
@@ -652,6 +673,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       env.PAPERCLIP_OPENCODE_PRINT_LOGS ?? process.env.PAPERCLIP_OPENCODE_PRINT_LOGS,
     );
     const openCodeV2 = usesOpenCodeV2Cli(openCodeCliVersion);
+    // Headless `run` rejects any permission request it cannot answer. Auto
+    // mode approves everything not explicitly denied, which is what an
+    // unattended Paperclip run needs; explicit deny rules and policies still
+    // apply. Only add it when the operator kept skip-permissions enabled.
+    const autoApprovePermissions = asBoolean(
+      config.dangerouslySkipPermissions,
+      true,
+    );
     const buildArgs = (resumeSessionId: string | null) => {
       const args = ["run", "--format", "json"];
       if (printLogs) args.push("--print-logs");
@@ -661,6 +690,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const modelArg = openCodeV2 && variant ? `${model}#${variant}` : model;
       if (modelArg) args.push("--model", modelArg);
       if (!openCodeV2 && variant) args.push("--variant", variant);
+      if (autoApprovePermissions) args.push("--auto");
       if (extraArgs.length > 0) args.push(...extraArgs);
       return args;
     };

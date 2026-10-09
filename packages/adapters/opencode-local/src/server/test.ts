@@ -133,7 +133,25 @@ export async function testEnvironment(
 
   // Prevent OpenCode from writing an opencode.json into the working directory.
   env.OPENCODE_DISABLE_PROJECT_CONFIG = "true";
-  const preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({ env, config });
+  // Pick the runtime permission shape from the installed CLI major before the
+  // config is written: 1.x rejects `permissions`, and 2.x gives native
+  // `permissions` precedence over the V1 `permission` string.
+  const preflightCliVersion = targetIsRemote
+    ? null
+    : await probeOpenCodeCliVersion({
+        command,
+        cwd,
+        env: Object.fromEntries(
+          Object.entries(ensurePathInEnv({ ...process.env, ...env })).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string",
+          ),
+        ),
+      });
+  const preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({
+    env,
+    config,
+    openCodeV2: usesOpenCodeV2Cli(preflightCliVersion),
+  });
   const localRuntimeConfigHome =
     preparedRuntimeConfig.notes.length > 0 ? preparedRuntimeConfig.env.XDG_CONFIG_HOME : "";
   if (asBoolean(config.dangerouslySkipPermissions, true)) {
@@ -380,6 +398,9 @@ export async function testEnvironment(
         openCodeV2 && variant ? `${probeModel}#${variant}` : probeModel;
       args.push("--model", probeModelArg);
       if (!openCodeV2 && variant) args.push("--variant", variant);
+      // Keep the hello probe aligned with the real run: unattended auto mode
+      // approves permission requests that would otherwise block the probe.
+      if (asBoolean(config.dangerouslySkipPermissions, true)) args.push("--auto");
       if (extraArgs.length > 0) args.push(...extraArgs);
 
       // Sandbox bridges still add cold-start and transport overhead, but the

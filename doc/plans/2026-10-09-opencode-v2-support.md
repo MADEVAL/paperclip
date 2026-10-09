@@ -13,6 +13,39 @@ an agent. The Paperclip Runner's `opencode_server` driver additionally drove
 the V1 HTTP server API (`/session`, `/session/:id/prompt_async`, `/event`,
 `/permission`, `/question`), which V2 replaced under `/api/...`.
 
+## Phase 1.1 - headless permission fix (DONE)
+
+A real `opencode_local` run failed with
+`permission requested: external_directory (.../instructions/*; .../file-sync/*); auto-rejecting`.
+Live reproduction against real V1 (1.18.34) and V2 (2.0.26) binaries, plus
+binary/documentation analysis, established the cause and fixes:
+
+- Headless `opencode run` auto-rejects any permission it cannot answer. The
+  message is `permission requested: <action> (<resources>); auto-rejecting`;
+  `--auto` makes it approve everything not explicitly denied (a `deny` rule or
+  policy still wins).
+- OpenCode 1.x rejects the V2 `permissions` key outright ("V2 permissions are
+  not supported by OpenCode V1"), and 2.x gives native `permissions` precedence
+  over the V1 `permission` string. A single shape cannot be written blindly.
+- The agent instructions and `file-sync` trees live outside the workspace, so
+  any `external_directory` rule that resolves to `ask` (a native `permissions`
+  entry, a profile, or 1.x defaults) fails the unattended run.
+
+Fixes (A+B):
+
+- **A:** pass `--auto` to `opencode run` when `dangerouslySkipPermissions` is
+  enabled (the default), in both the adapter run and the environment hello
+  probe.
+- **B:** write the version-native allow shape. Probe the CLI major before
+  writing the runtime config, then emit V1 `permission: "allow"` or V2 native
+  `permissions: [{action:"*",..allow},{action:"external_directory",..allow}]`
+  (and drop the other key).
+
+C (narrow per-directory allow) is intentionally not applied: under
+`dangerouslySkipPermissions` the broad allow is the documented intent, and the
+adapter can reliably derive the instructions directory but not the
+server-managed `file-sync` directory at config time.
+
 ## Phase 1 - direct CLI adapter (`opencode_local`) - DONE
 
 Qualified both majors and made the CLI flags version-aware:

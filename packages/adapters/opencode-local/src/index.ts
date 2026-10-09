@@ -107,7 +107,7 @@ Core fields:
 - instructionsFilePath (string, optional): absolute path to a markdown instructions file prepended to the run prompt
 - model (string, required): OpenCode model id in provider/model format (for example anthropic/claude-sonnet-4-5)
 - variant (string, optional): provider-specific reasoning/profile variant passed as --variant (for example minimal|low|medium|high|xhigh|max)
-- dangerouslySkipPermissions (boolean, optional): inject a runtime OpenCode config with \`permission=allow\` for all tools and connections; defaults to true for unattended Paperclip runs
+- dangerouslySkipPermissions (boolean, optional): auto-approve headless permissions. Injects a runtime OpenCode config allowing all tools and external-directory access (V1 \`permission=allow\`, V2 native \`permissions\`) and passes \`--auto\` to \`opencode run\`; defaults to true for unattended Paperclip runs
 - promptTemplate (string, optional): run prompt template
 - command (string, optional): defaults to "opencode"
 - extraArgs (string[], optional): additional CLI args
@@ -126,12 +126,15 @@ Notes:
   into \`provider/model#variant\`); an unsupported major is rejected with an \
   actionable error. Set PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION=1 to bypass \
   that guard for an unverified run.
-- Runs are executed with: opencode run --format json ...
+- Runs are executed with: opencode run --format json (plus --auto when headless permissions are enabled)...
 - Sessions are resumed with --session when stored session cwd matches current cwd.
 - The adapter sets OPENCODE_DISABLE_PROJECT_CONFIG=true to prevent OpenCode from \
   writing an opencode.json config file into the project working directory. Model \
   selection is passed via the --model CLI flag instead.
 - When \`dangerouslySkipPermissions\` is enabled, Paperclip injects a temporary \
-  runtime config with \`permission=allow\` so headless runs do \
-  not stall on approval prompts.
+  runtime config that allows all tools and external-directory access (V1 \
+  \`permission=allow\`; V2 native \`permissions\`), and passes \`--auto\` to \
+  \`opencode run\`. Together these stop headless runs from stalling on approval \
+  prompts for the agent instructions and file-sync trees, while explicit deny \
+  rules and policies still apply.
 `;
