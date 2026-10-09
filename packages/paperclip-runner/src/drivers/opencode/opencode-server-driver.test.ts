@@ -2583,7 +2583,7 @@ describe("OpenCodeServerDriver", () => {
     });
     expect(session.ids()).toMatchObject({ providerSessionId: "ses_fake_1" });
     expect(requests.some((entry) => entry.startsWith("GET /api/info"))).toBe(true);
-    expect(requests.some((entry) => entry.startsWith("POST /api/session "))).toBe(true);
+    expect(requests).toContain("POST /api/session");
 
     const config = JSON.parse(
       await readFile(
@@ -2632,10 +2632,30 @@ describe("OpenCodeServerDriver", () => {
     const events = await collectTurnEvents(session.events());
     const types = events.map((event) => event.eventType);
     expect(types).toContain("turn.completed");
-    expect(events.filter((event) => event.eventType === "item.delta")).toHaveLength(1);
+    const agentDelta = events.find(
+      (event) =>
+        event.eventType === "item.delta" &&
+        event.payload.kind === "agentMessage",
+    );
+    expect(agentDelta?.payload.text).toBe("done [guide](guide.md)");
     expect(
-      events.find((event) => event.eventType === "item.delta")?.payload.text,
-    ).toBe("done [guide](guide.md)");
+      events.some(
+        (event) =>
+          event.eventType === "item.completed" &&
+          event.payload.kind === "reasoning",
+      ),
+    ).toBe(true);
+    expect(types).toContain("tool.execution.completed");
+    expect(types).toContain("run.result.proposed");
+    expect(
+      events.some(
+        (event) =>
+          event.eventType === "item.completed" &&
+          event.payload.kind === "dynamicToolCall" &&
+          (event.payload as { item?: { type?: string } }).item?.type ===
+            "tool_result",
+      ),
+    ).toBe(true);
     expect(
       events.find(
         (event) =>

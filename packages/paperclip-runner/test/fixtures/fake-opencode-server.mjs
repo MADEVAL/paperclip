@@ -471,6 +471,41 @@ async function handleV2(request, response) {
           { sessionID: session.id, assistantMessageID: "message-assistant" },
           "evt-step-started",
         );
+        emitV2(
+          "session.reasoning.started",
+          { sessionID: session.id, assistantMessageID: "message-assistant", ordinal: 0 },
+          "evt-reasoning-started",
+        );
+        emitV2(
+          "session.reasoning.delta",
+          { sessionID: session.id, assistantMessageID: "message-assistant", ordinal: 0, delta: "considering options" },
+          "evt-reasoning-delta",
+        );
+        emitV2(
+          "session.reasoning.ended",
+          { sessionID: session.id, assistantMessageID: "message-assistant", ordinal: 0, text: "considering options" },
+          "evt-reasoning-ended",
+        );
+        emitV2(
+          "session.tool.input.started",
+          { sessionID: session.id, assistantMessageID: "message-assistant", id: "call-read", name: "read" },
+          "evt-tool-input-started",
+        );
+        emitV2(
+          "session.tool.input.ended",
+          { sessionID: session.id, assistantMessageID: "message-assistant", id: "call-read", text: '{"path":"guide.md"}' },
+          "evt-tool-input-ended",
+        );
+        emitV2(
+          "session.tool.called",
+          { sessionID: session.id, assistantMessageID: "message-assistant", id: "call-read", input: { path: "guide.md" }, executed: true },
+          "evt-tool-called",
+        );
+        emitV2(
+          "session.tool.succeeded",
+          { sessionID: session.id, assistantMessageID: "message-assistant", id: "call-read", output: "guide contents", executed: true },
+          "evt-tool-succeeded",
+        );
         await callTerminalTool(promptBody);
         emitV2(
           "session.text.started",
