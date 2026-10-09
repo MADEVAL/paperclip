@@ -298,6 +298,30 @@ describe("api-client V2 event normalization", () => {
     expect(client.normalizeEvent({ type: "server.connected", data: {} })).toEqual([]);
   });
 
+  it("retains the tool name across later V2 events that omit it", () => {
+    const { client } = captureClient("v2");
+    const started = client.normalizeEvent({
+      id: "evt-tool-start",
+      type: "session.tool.input.started",
+      data: { sessionID: "ses_1", assistantMessageID: "msg_1", id: "call_1", name: "read" },
+    });
+    expect((started[0] as { properties: { part: { tool: string } } }).properties.part.tool).toBe("read");
+    // V2 omits `name` on the completed/failed update; the normalized part must
+    // keep the name from the first event, or the tool is misclassified.
+    const completed = client.normalizeEvent({
+      id: "evt-tool-done",
+      type: "session.tool.succeeded",
+      data: { sessionID: "ses_1", assistantMessageID: "msg_1", id: "call_1", output: "ok" },
+    });
+    expect((completed[0] as { properties: { part: { tool: string } } }).properties.part.tool).toBe("read");
+    const failed = client.normalizeEvent({
+      id: "evt-tool-fail",
+      type: "session.tool.failed",
+      data: { sessionID: "ses_1", assistantMessageID: "msg_1", id: "call_1", error: { message: "boom" } },
+    });
+    expect((failed[0] as { properties: { part: { tool: string } } }).properties.part.tool).toBe("read");
+  });
+
   it("maps Paperclip answers onto V2 form values", () => {
     const questions = formFieldsToQuestions([
       { key: "name", type: "string", title: "Name" },

@@ -517,14 +517,15 @@ describe("agent test-environment route", () => {
     }));
   });
 
-  it("adopts a projected api_key connection (DeepSeek) via the harness hello probe, not a canonical env key", async () => {
-    // DeepSeek's key is projected as `PAPERCLIP_AI_PROVIDER_KEY`; its canonical
-    // `DEEPSEEK_API_KEY` is intentionally blanked for managed connections. The
-    // adoption check must not demand that canonical var, or every DeepSeek
-    // adoption fails with a misleading "key not available" verdict.
+  it("adopts a projected api_key connection via the harness hello probe, not a canonical env key", async () => {
+    // A projected account carries its key in the harness-projected
+    // `PAPERCLIP_AI_PROVIDER_KEY` and intentionally leaves the provider's
+    // canonical key blank. The adoption check must not demand that canonical
+    // var, or every projected adoption fails with a misleading "key not
+    // available" verdict.
     mockManagedRuntime("api_key", {
-      provider: "deepseek",
-      env: { DEEPSEEK_API_KEY: "", PAPERCLIP_AI_PROVIDER_KEY: "ds-projected-key" },
+      provider: "openai",
+      env: { OPENAI_API_KEY: "", PAPERCLIP_AI_PROVIDER_KEY: "projected-key" },
     });
     testEnvironmentSpy.mockResolvedValue({
       adapterType: "external_test",
@@ -537,7 +538,7 @@ describe("agent test-environment route", () => {
       .post("/api/companies/company-1/adapters/external_test/test-environment")
       .send({
         adapterConfig: { cwd: "/" },
-        aiConnection: { provider: "deepseek", method: "api_key", mode: "responsible_user" },
+        aiConnection: { provider: "openai", method: "api_key", mode: "responsible_user" },
       });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(res.body.status).toBe("pass");

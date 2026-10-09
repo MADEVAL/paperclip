@@ -2362,14 +2362,28 @@ async function startRuntime(input: {
         configPath,
         buildOpenCodeConfig({ ...configInput, apiVersion: "v2" }),
       );
-      try {
-        await api(fetcher, apiContext, "/api/location/reload", {
-          method: "POST",
-          body: JSON.stringify({}),
-        });
-      } catch (error) {
-        input.options.onDiagnostic?.(
-          `OpenCode V2 config reload failed; continuing with the V1-compatible config. ${redact(String(error), sensitiveValues)}`,
+      let reloadError: unknown = null;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          await api(fetcher, apiContext, "/api/location/reload", {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          reloadError = null;
+          break;
+        } catch (error) {
+          reloadError = error;
+          if (attempt < 3)
+            await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+      }
+      if (reloadError) {
+        // Continuing with the bootstrap config would start a session that has no
+        // `paperclip` agent and no MCP servers, and the V2 prompt discards the
+        // system prompt, so the runner could not supply its instructions on
+        // either path. Fail startup instead of running a hollow session.
+        throw new Error(
+          `OpenCode V2 rejected the runtime config reload after 3 attempts, so the required agent instructions and MCP servers would be unavailable. ${redact(String(reloadError), sensitiveValues)}`,
         );
       }
       // V2 does not auto-connect MCP servers, and registration after a reload
@@ -2380,21 +2394,25 @@ async function startRuntime(input: {
         "paperclip",
         ...(assignedMcp ? [assignedMcp.name] : []),
       ];
-      for (const name of expectedMcp) {
-        try {
-          await api(
-            fetcher,
-            apiContext,
-            `/api/experimental/mcp/${encodeURIComponent(name)}/connect`,
-            { method: "POST", body: JSON.stringify({}) },
-          );
-        } catch {
-          /* the connect endpoint is best-effort; the poll below is authoritative */
+      const connectMcp = async (names: Iterable<string>) => {
+        for (const name of names) {
+          try {
+            await api(
+              fetcher,
+              apiContext,
+              `/api/experimental/mcp/${encodeURIComponent(name)}/connect`,
+              { method: "POST", body: JSON.stringify({}) },
+            );
+          } catch {
+            /* the connect endpoint is best-effort; the poll below is authoritative */
+          }
         }
-      }
+      };
+      await connectMcp(expectedMcp);
       const mcpDeadline = Date.now() + 10_000;
-      let mcpReady = false;
-      while (!mcpReady && Date.now() < mcpDeadline) {
+      const pendingMcp = new Set(expectedMcp);
+      let lastConnectAt = Date.now();
+      while (pendingMcp.size > 0 && Date.now() < mcpDeadline) {
         try {
           const listing = record(
             await api(fetcher, apiContext, "/api/mcp"),
@@ -2405,18 +2423,27 @@ async function startRuntime(input: {
               text(record(server.status).status),
             ]),
           );
-          mcpReady = expectedMcp.every(
-            (name) => statuses.get(name) === "connected",
-          );
+          for (const name of [...pendingMcp]) {
+            if (statuses.get(name) === "connected") pendingMcp.delete(name);
+          }
         } catch {
           /* the location is still reloading */
         }
-        if (!mcpReady)
+        if (pendingMcp.size > 0) {
+          // Registration after a reload is asynchronous, so the first connect
+          // can arrive before the server exists. Re-issue it while we wait.
+          if (Date.now() - lastConnectAt >= 1_000) {
+            lastConnectAt = Date.now();
+            await connectMcp([...pendingMcp]);
+          }
           await new Promise((resolve) => setTimeout(resolve, 100));
+        }
       }
-      if (!mcpReady) {
-        input.options.onDiagnostic?.(
-          `OpenCode V2 MCP servers did not report connected before the session started (${expectedMcp.join(", ")}).`,
+      if (pendingMcp.size > 0) {
+        // Without the loop, the model never sees the semantic tools, the
+        // completion tool fails, and the turn ends with no structured result.
+        throw new Error(
+          `OpenCode V2 MCP servers did not report connected before the session started: ${[...pendingMcp].join(", ")}. The agent would run without the Paperclip completion and assigned tools.`,
         );
       }
     }

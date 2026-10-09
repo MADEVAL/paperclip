@@ -650,6 +650,20 @@ interface SynthesizedProviderEvent {
 class OpenCodeV2EventNormalizer {
   #sequence = 0;
   readonly #text = new Map<string, string>();
+  // V2 reports the tool name on the first event for a call and omits it on
+  // later running/completed/failed updates. Retain it by call id so the
+  // canonical tool part keeps its name (and its read-only classification)
+  // across the whole call.
+  readonly #toolNames = new Map<string, string>();
+
+  #toolName(toolId: string, value: unknown): string {
+    const name = text(value);
+    if (name) {
+      this.#toolNames.set(toolId, name);
+      return name;
+    }
+    return this.#toolNames.get(toolId) ?? "";
+  }
 
   normalize(raw: unknown): SynthesizedProviderEvent[] {
     const event = record(raw);
@@ -699,7 +713,7 @@ class OpenCodeV2EventNormalizer {
             id: toolId,
             messageID: messageId,
             type: "tool",
-            tool: text(data.name),
+            tool: this.#toolName(toolId, data.name),
             callID: toolId,
             state: { status: "pending" },
           },
@@ -715,7 +729,7 @@ class OpenCodeV2EventNormalizer {
             id: toolId,
             messageID: messageId,
             type: "tool",
-            tool: text(data.name),
+            tool: this.#toolName(toolId, data.name),
             callID: toolId,
             state: {
               status: "running",
@@ -740,7 +754,7 @@ class OpenCodeV2EventNormalizer {
             id: toolId,
             messageID: messageId,
             type: "tool",
-            tool: text(data.name),
+            tool: this.#toolName(toolId, data.name),
             callID: toolId,
             state: { status: "completed", input: record(data.input), output },
           },
@@ -755,7 +769,7 @@ class OpenCodeV2EventNormalizer {
             id: toolId,
             messageID: messageId,
             type: "tool",
-            tool: text(data.name),
+            tool: this.#toolName(toolId, data.name),
             callID: toolId,
             state: {
               status: "error",

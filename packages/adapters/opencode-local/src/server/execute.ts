@@ -67,6 +67,7 @@ import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 import { resolveOpenCodeSkillsHome } from "./skills.js";
 import {
   allowsUnsupportedOpenCodeVersion,
+  parseOpenCodeCliVersion,
   probeOpenCodeCliVersion,
   unsupportedOpenCodeVersionMessage,
   usesOpenCodeV2Cli,
@@ -97,6 +98,41 @@ function resolveOpenCodeBiller(env: Record<string, string>, provider: string | n
 
 const REMOTE_OPENCODE_MODELS_PROBE_DEFAULT_TIMEOUT_SEC = 20;
 const REMOTE_OPENCODE_MODELS_PROBE_SANDBOX_TIMEOUT_SEC = 120;
+
+/**
+ * Best-effort `opencode --version` probe on the execution target itself. A
+ * remote sandbox or SSH target runs its own binary, so the host-side probe
+ * cannot speak for it. A probe that cannot run returns null, and the caller
+ * keeps the preflight generation instead of failing the run.
+ */
+async function probeOpenCodeCliVersionOnTarget(input: {
+  runId: string;
+  executionTarget: AdapterExecutionContext["executionTarget"];
+  command: string;
+  cwd: string;
+  env: Record<string, string>;
+  timeoutSec: number;
+  graceSec: number;
+}): Promise<OpenCodeCliVersion | null> {
+  try {
+    const result = await runAdapterExecutionTargetProcess(
+      input.runId,
+      input.executionTarget,
+      input.command,
+      ["--version"],
+      {
+        cwd: input.cwd,
+        env: input.env,
+        timeoutSec: input.timeoutSec > 0 ? Math.min(input.timeoutSec, 10) : 10,
+        graceSec: input.graceSec,
+        onLog: async () => {},
+      },
+    );
+    return parseOpenCodeCliVersion(`${result.stdout}\n${result.stderr}`);
+  } catch {
+    return null;
+  }
+}
 
 export async function ensureRemoteOpenCodeModelConfiguredAndAvailable(input: {
   runId: string;
@@ -343,7 +379,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   // `permissions` precedence over the V1 `permission` string. Probe the CLI
   // major before writing the runtime config so the injected permission shape
   // matches the installed generation. A failed preflight (command not yet
-  // installed) falls back to the V1 shape, which 2.x still normalizes.
+  // installed) falls back to the V1 shape; the post-install probe below
+  // re-prepares the config when the installed generation differs.
   const preflightCliVersion = executionTargetIsRemote
     ? null
     : await probeOpenCodeCliVersion({
@@ -355,19 +392,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           ),
         ),
       });
-  const preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({
+  let preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({
     env,
     config,
     openCodeV2: usesOpenCodeV2Cli(preflightCliVersion),
   });
-  const localRuntimeConfigHome =
+  let localRuntimeConfigHome =
     preparedRuntimeConfig.notes.length > 0 ? preparedRuntimeConfig.env.XDG_CONFIG_HOME : "";
-  try {
-    const runtimeEnv = Object.fromEntries(
+  const buildRuntimeEnv = () =>
+    Object.fromEntries(
       Object.entries(ensurePathInEnv({ ...process.env, ...preparedRuntimeConfig.env })).filter(
         (entry): entry is [string, string] => typeof entry[1] === "string",
       ),
     );
+  try {
+    let runtimeEnv = buildRuntimeEnv();
     const timeoutSec = resolveAdapterExecutionTargetTimeoutSec(
       executionTarget,
       asNumber(config.timeoutSec, 0),
@@ -389,38 +428,55 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       timeoutSec,
     });
     const resolvedCommand = await resolveAdapterExecutionTargetCommandForLogs(command, executionTarget, cwd, runtimeEnv);
+    // Detect the installed generation on the real execution target: a remote
+    // target runs its own binary, and even a local target can gain one during
+    // the install step above. Re-prepare the runtime config when the detected
+    // generation differs from the preflight, so the injected permission shape
+    // and the CLI flags agree with the installed CLI.
+    const cliVersion = executionTargetIsRemote
+      ? await probeOpenCodeCliVersionOnTarget({
+          runId,
+          executionTarget,
+          command,
+          cwd,
+          env: runtimeEnv,
+          timeoutSec,
+          graceSec,
+        })
+      : await probeOpenCodeCliVersion({ command, cwd, env: runtimeEnv });
+    if (usesOpenCodeV2Cli(cliVersion) !== usesOpenCodeV2Cli(preflightCliVersion)) {
+      await preparedRuntimeConfig.cleanup();
+      preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({
+        env,
+        config,
+        openCodeV2: usesOpenCodeV2Cli(cliVersion),
+      });
+      localRuntimeConfigHome =
+        preparedRuntimeConfig.notes.length > 0 ? preparedRuntimeConfig.env.XDG_CONFIG_HOME : "";
+      runtimeEnv = buildRuntimeEnv();
+    }
     let loggedEnv = buildInvocationEnvForLogs(preparedRuntimeConfig.env, {
       runtimeEnv,
       includeRuntimeKeys: ["HOME"],
       resolvedCommand,
     });
-    if (!executionTargetIsRemote) {
-      // OpenCode 2.x is a breaking release (server and plugin APIs); the
-      // adapter's CLI JSONL contract and runtime config shape are qualified
-      // against 1.x only. Detect the installed version and fail fast with an
-      // actionable message instead of letting a mismatched CLI surface as an
-      // opaque `OpenCode exited with code 1`.
-      const cliVersion = await probeOpenCodeCliVersion({
-        command,
-        cwd,
-        env: runtimeEnv,
-      });
-      if (cliVersion) {
-        openCodeCliVersion = cliVersion;
-        openCodeCliVersionNote = `OpenCode CLI version ${cliVersion.version}`;
-        await onLog(
-          "stdout",
-          `[paperclip] OpenCode CLI version ${cliVersion.version}.\n`,
-        );
-        if (!cliVersion.supported) {
-          const message = unsupportedOpenCodeVersionMessage(cliVersion);
-          if (allowsUnsupportedOpenCodeVersion(preparedRuntimeConfig.env)) {
-            await onLog("stdout", `[paperclip] Warning: ${message}\n`);
-          } else {
-            throw new Error(message);
-          }
+    if (cliVersion) {
+      openCodeCliVersion = cliVersion;
+      openCodeCliVersionNote = `OpenCode CLI version ${cliVersion.version}`;
+      await onLog(
+        "stdout",
+        `[paperclip] OpenCode CLI version ${cliVersion.version}.\n`,
+      );
+      if (!cliVersion.supported) {
+        const message = unsupportedOpenCodeVersionMessage(cliVersion);
+        if (allowsUnsupportedOpenCodeVersion(preparedRuntimeConfig.env)) {
+          await onLog("stdout", `[paperclip] Warning: ${message}\n`);
+        } else {
+          throw new Error(message);
         }
       }
+    }
+    if (!executionTargetIsRemote) {
       await ensureOpenCodeModelConfiguredAndAvailable({
         model,
         command,
