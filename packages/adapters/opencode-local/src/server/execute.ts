@@ -67,8 +67,8 @@ import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 import { resolveOpenCodeSkillsHome } from "./skills.js";
 import {
   allowsUnsupportedOpenCodeVersion,
-  parseOpenCodeCliVersion,
   probeOpenCodeCliVersion,
+  probeOpenCodeCliVersionOnTarget,
   unsupportedOpenCodeVersionMessage,
   usesOpenCodeV2Cli,
   type OpenCodeCliVersion,
@@ -98,41 +98,6 @@ function resolveOpenCodeBiller(env: Record<string, string>, provider: string | n
 
 const REMOTE_OPENCODE_MODELS_PROBE_DEFAULT_TIMEOUT_SEC = 20;
 const REMOTE_OPENCODE_MODELS_PROBE_SANDBOX_TIMEOUT_SEC = 120;
-
-/**
- * Best-effort `opencode --version` probe on the execution target itself. A
- * remote sandbox or SSH target runs its own binary, so the host-side probe
- * cannot speak for it. A probe that cannot run returns null, and the caller
- * keeps the preflight generation instead of failing the run.
- */
-async function probeOpenCodeCliVersionOnTarget(input: {
-  runId: string;
-  executionTarget: AdapterExecutionContext["executionTarget"];
-  command: string;
-  cwd: string;
-  env: Record<string, string>;
-  timeoutSec: number;
-  graceSec: number;
-}): Promise<OpenCodeCliVersion | null> {
-  try {
-    const result = await runAdapterExecutionTargetProcess(
-      input.runId,
-      input.executionTarget,
-      input.command,
-      ["--version"],
-      {
-        cwd: input.cwd,
-        env: input.env,
-        timeoutSec: input.timeoutSec > 0 ? Math.min(input.timeoutSec, 10) : 10,
-        graceSec: input.graceSec,
-        onLog: async () => {},
-      },
-    );
-    return parseOpenCodeCliVersion(`${result.stdout}\n${result.stderr}`);
-  } catch {
-    return null;
-  }
-}
 
 export async function ensureRemoteOpenCodeModelConfiguredAndAvailable(input: {
   runId: string;

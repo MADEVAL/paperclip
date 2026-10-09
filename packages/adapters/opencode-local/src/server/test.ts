@@ -32,6 +32,7 @@ import { prepareOpenCodeRuntimeConfig, prepareManagedOpenCodeRemoteHomes } from 
 import {
   allowsUnsupportedOpenCodeVersion,
   probeOpenCodeCliVersion,
+  probeOpenCodeCliVersionOnTarget,
   unsupportedOpenCodeVersionMessage,
   usesOpenCodeV2Cli,
   type OpenCodeCliVersion,
@@ -241,31 +242,38 @@ export async function testEnvironment(
           detail: command,
         });
       }
-      if (!targetIsRemote) {
-        // Local runs enforce the supported major version in `execute.ts`; surface
-        // the same diagnosis (with a remediation) here so the environment test
-        // catches an OpenCode 2.x install before a run fails opaquely. Honour the
-        // same escape hatch `execute.ts` does: when the operator opts into an
-        // unverified version, downgrade to a warning instead of failing adoption.
-        const cliVersion = await probeOpenCodeCliVersion({ command, cwd, env: runtimeEnv });
-        if (cliVersion) openCodeCliVersion = cliVersion;
-        if (cliVersion && !cliVersion.supported) {
-          const bypassed = allowsUnsupportedOpenCodeVersion(env);
-          checks.push({
-            code: "opencode_version_unsupported",
-            level: bypassed ? "warn" : "error",
-            message: bypassed
-              ? `${unsupportedOpenCodeVersionMessage(cliVersion)} (Guard bypassed by PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION for this test.)`
-              : unsupportedOpenCodeVersionMessage(cliVersion),
-            hint: `Install OpenCode ${QUALIFIED_OPENCODE_VERSION}, or point the adapter "command" at a supported 1.x binary.`,
-          });
-        } else if (cliVersion) {
-          checks.push({
-            code: "opencode_version",
-            level: "info",
-            message: `OpenCode CLI version: ${cliVersion.version}`,
-          });
-        }
+      // Surface the installed CLI major for both local and remote targets so the
+      // hello probe below chooses the right flags (`--variant` on 1.x, the
+      // `provider/model#variant` ref on 2.x) and the adoption check catches an
+      // unsupported install with a remediation. Honour the same escape hatch
+      // `execute.ts` does: when the operator opts into an unverified version,
+      // downgrade to a warning instead of failing adoption.
+      const cliVersion = targetIsRemote
+        ? await probeOpenCodeCliVersionOnTarget({
+            runId,
+            executionTarget: runtimeTarget,
+            command,
+            cwd: runtimeCwd,
+            env: runtimeEnv,
+          })
+        : await probeOpenCodeCliVersion({ command, cwd, env: runtimeEnv });
+      if (cliVersion) openCodeCliVersion = cliVersion;
+      if (cliVersion && !cliVersion.supported) {
+        const bypassed = allowsUnsupportedOpenCodeVersion(env);
+        checks.push({
+          code: "opencode_version_unsupported",
+          level: bypassed ? "warn" : "error",
+          message: bypassed
+            ? `${unsupportedOpenCodeVersionMessage(cliVersion)} (Guard bypassed by PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION for this test.)`
+            : unsupportedOpenCodeVersionMessage(cliVersion),
+          hint: `Install OpenCode ${QUALIFIED_OPENCODE_VERSION}, or point the adapter "command" at a supported 1.x binary.`,
+        });
+      } else if (cliVersion) {
+        checks.push({
+          code: "opencode_version",
+          level: "info",
+          message: `OpenCode CLI version: ${cliVersion.version}`,
+        });
       }
     }
 

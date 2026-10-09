@@ -1,4 +1,5 @@
 import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
+import { runAdapterExecutionTargetProcess } from "@paperclipai/adapter-utils/execution-target";
 import {
   QUALIFIED_OPENCODE_VERSION,
   SUPPORTED_OPENCODE_MAJOR_VERSIONS,
@@ -97,6 +98,44 @@ export async function probeOpenCodeCliVersion(input: {
         env: input.env,
         timeoutSec: input.timeoutSec ?? 10,
         graceSec: 2,
+        onLog: async () => {},
+      },
+    );
+    return parseOpenCodeCliVersion(`${result.stdout}\n${result.stderr}`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort `opencode --version` probe on the execution target itself. A
+ * remote sandbox or SSH target runs its own binary, so the host-side probe
+ * cannot speak for it. A probe that cannot run returns null, and the caller
+ * keeps the preflight generation instead of failing the run.
+ */
+export async function probeOpenCodeCliVersionOnTarget(input: {
+  runId: string;
+  executionTarget: Parameters<typeof runAdapterExecutionTargetProcess>[1];
+  command: string;
+  cwd: string;
+  env: Record<string, string>;
+  timeoutSec?: number;
+  graceSec?: number;
+}): Promise<OpenCodeCliVersion | null> {
+  try {
+    const result = await runAdapterExecutionTargetProcess(
+      input.runId,
+      input.executionTarget,
+      input.command,
+      ["--version"],
+      {
+        cwd: input.cwd,
+        env: input.env,
+        timeoutSec:
+          input.timeoutSec && input.timeoutSec > 0
+            ? Math.min(input.timeoutSec, 10)
+            : 10,
+        graceSec: input.graceSec ?? 2,
         onLog: async () => {},
       },
     );
