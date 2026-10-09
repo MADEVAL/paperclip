@@ -375,30 +375,18 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   let openCodeCliVersionNote: string | null = null;
   let openCodeCliVersion: OpenCodeCliVersion | null = null;
-  // OpenCode 1.x rejects the V2 `permissions` key and 2.x gives native
-  // `permissions` precedence over the V1 `permission` string. Probe the CLI
-  // major before writing the runtime config so the injected permission shape
-  // matches the installed generation. A failed preflight (command not yet
-  // installed) falls back to the V1 shape; the post-install probe below
-  // re-prepares the config when the installed generation differs.
-  const preflightCliVersion = executionTargetIsRemote
-    ? null
-    : await probeOpenCodeCliVersion({
-        command,
-        cwd,
-        env: Object.fromEntries(
-          Object.entries(ensurePathInEnv({ ...process.env, ...env })).filter(
-            (entry): entry is [string, string] => typeof entry[1] === "string",
-          ),
-        ),
-      });
-  let preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({
+  // Install and resolve the CLI, then probe its major on the execution target
+  // and prepare the runtime config to match. OpenCode 1.x rejects the V2
+  // `permissions` key and 2.x gives native `permissions` precedence over the V1
+  // `permission` string, and V2 removed `--variant`, so both the config shape
+  // and the CLI flags must follow the installed generation. A remote sandbox or
+  // SSH target runs its own binary, and a fresh install only exists after the
+  // install step below, so the probe runs there rather than before it.
+  let preparedRuntimeConfig: Awaited<ReturnType<typeof prepareOpenCodeRuntimeConfig>> = {
     env,
-    config,
-    openCodeV2: usesOpenCodeV2Cli(preflightCliVersion),
-  });
-  let localRuntimeConfigHome =
-    preparedRuntimeConfig.notes.length > 0 ? preparedRuntimeConfig.env.XDG_CONFIG_HOME : "";
+    notes: [],
+    cleanup: async () => {},
+  };
   const buildRuntimeEnv = () =>
     Object.fromEntries(
       Object.entries(ensurePathInEnv({ ...process.env, ...preparedRuntimeConfig.env })).filter(
@@ -406,7 +394,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ),
     );
   try {
-    let runtimeEnv = buildRuntimeEnv();
     const timeoutSec = resolveAdapterExecutionTargetTimeoutSec(
       executionTarget,
       asNumber(config.timeoutSec, 0),
@@ -418,43 +405,35 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       installCommand: ctx.runtimeCommandSpec?.installCommand,
     detectCommand: ctx.runtimeCommandSpec?.detectCommand,
       cwd,
-      env: runtimeEnv,
+      env: buildRuntimeEnv(),
       timeoutSec,
       graceSec,
       onLog,
     });
-    await ensureAdapterExecutionTargetCommandResolvable(command, executionTarget, cwd, runtimeEnv, {
+    await ensureAdapterExecutionTargetCommandResolvable(command, executionTarget, cwd, buildRuntimeEnv(), {
       installCommand: SANDBOX_INSTALL_COMMAND,
       timeoutSec,
     });
-    const resolvedCommand = await resolveAdapterExecutionTargetCommandForLogs(command, executionTarget, cwd, runtimeEnv);
-    // Detect the installed generation on the real execution target: a remote
-    // target runs its own binary, and even a local target can gain one during
-    // the install step above. Re-prepare the runtime config when the detected
-    // generation differs from the preflight, so the injected permission shape
-    // and the CLI flags agree with the installed CLI.
+    const resolvedCommand = await resolveAdapterExecutionTargetCommandForLogs(command, executionTarget, cwd, buildRuntimeEnv());
     const cliVersion = executionTargetIsRemote
       ? await probeOpenCodeCliVersionOnTarget({
           runId,
           executionTarget,
           command,
           cwd,
-          env: runtimeEnv,
+          env: buildRuntimeEnv(),
           timeoutSec,
           graceSec,
         })
-      : await probeOpenCodeCliVersion({ command, cwd, env: runtimeEnv });
-    if (usesOpenCodeV2Cli(cliVersion) !== usesOpenCodeV2Cli(preflightCliVersion)) {
-      await preparedRuntimeConfig.cleanup();
-      preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({
-        env,
-        config,
-        openCodeV2: usesOpenCodeV2Cli(cliVersion),
-      });
-      localRuntimeConfigHome =
-        preparedRuntimeConfig.notes.length > 0 ? preparedRuntimeConfig.env.XDG_CONFIG_HOME : "";
-      runtimeEnv = buildRuntimeEnv();
-    }
+      : await probeOpenCodeCliVersion({ command, cwd, env: buildRuntimeEnv() });
+    preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({
+      env,
+      config,
+      openCodeV2: usesOpenCodeV2Cli(cliVersion),
+    });
+    let localRuntimeConfigHome =
+      preparedRuntimeConfig.notes.length > 0 ? preparedRuntimeConfig.env.XDG_CONFIG_HOME : "";
+    let runtimeEnv = buildRuntimeEnv();
     let loggedEnv = buildInvocationEnvForLogs(preparedRuntimeConfig.env, {
       runtimeEnv,
       includeRuntimeKeys: ["HOME"],

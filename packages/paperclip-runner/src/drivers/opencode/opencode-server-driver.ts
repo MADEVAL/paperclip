@@ -2440,6 +2440,24 @@ async function startRuntime(input: {
         }
       }
       if (pendingMcp.size > 0) {
+        // A retry can complete after the loop deadline but within the request
+        // timeout, so re-read the status once more before failing startup.
+        try {
+          const listing = record(await api(fetcher, apiContext, "/api/mcp"));
+          const statuses = new Map(
+            arrayOfRecords(listing.data).map((server) => [
+              text(server.name),
+              text(record(server.status).status),
+            ]),
+          );
+          for (const name of [...pendingMcp]) {
+            if (statuses.get(name) === "connected") pendingMcp.delete(name);
+          }
+        } catch {
+          /* fall through to the failure below */
+        }
+      }
+      if (pendingMcp.size > 0) {
         // Without the loop, the model never sees the semantic tools, the
         // completion tool fails, and the turn ends with no structured result.
         throw new Error(
