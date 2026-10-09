@@ -2818,6 +2818,7 @@ function sanitizedEnvironment(
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
     "OPENROUTER_API_KEY",
+    "OPENCODE_ALLOW_ALL_MODELS",
   ];
   const result: NodeJS.ProcessEnv = {};
   for (const key of allowed)
@@ -2839,6 +2840,7 @@ function sanitizedEnvironmentKeys(): string[] {
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
     "OPENROUTER_API_KEY",
+    "OPENCODE_ALLOW_ALL_MODELS",
   ];
 }
 

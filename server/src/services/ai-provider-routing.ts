@@ -44,6 +44,10 @@ export function managedProviderRouting(
     else {
       env.PAPERCLIP_AI_PROVIDER_KEY = credential;
       env.PAPERCLIP_AI_PROVIDER_URL = baseUrl;
+      // The projected `paperclip` provider is per-run and never appears in
+      // `opencode models`; skip OpenCode's availability pre-flight so the
+      // configured model is not rejected as unavailable.
+      env.OPENCODE_ALLOW_ALL_MODELS = "1";
     }
     const id = model.startsWith(`${provider}/`)
       ? model.slice(provider.length + 1)

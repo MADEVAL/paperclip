@@ -149,4 +149,10 @@ describe("provider routing", () => {
     expect(aiProviderRoutingSchema.safeParse({ ...routing, auth: "aws_credentials" }).success).toBe(false);
     for (const key of ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]) expect(projected.env).not.toHaveProperty(key);
   });
+  it("skips OpenCode's model-availability pre-flight for the projected provider", () => {
+    const gateway = aiProviderRoutingSchema.parse({ kind: "gateway", protocol: "chat", baseUrl: "https://gateway.example/v1" });
+    const openrouter = aiProviderRoutingSchema.parse({ kind: "openrouter", protocol: "chat", auth: "bearer", models: [] });
+    expect(managedProviderRouting(gateway, "opencode_local", "k", "fixture-model").env.OPENCODE_ALLOW_ALL_MODELS).toBe("1");
+    expect(managedProviderRouting(openrouter, "opencode_local", "k", "openrouter/x/y").env.OPENCODE_ALLOW_ALL_MODELS).toBeUndefined();
+  });
 });
