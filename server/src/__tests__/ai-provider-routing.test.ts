@@ -127,6 +127,9 @@ describe("provider routing", () => {
     expect(opencode.config.model).toBe(
       "openrouter/anthropic/claude-sonnet-4.6",
     );
+    // OpenRouter is a built-in provider that can resolve its own default small
+    // model, so it is not pinned like the projected `paperclip` provider.
+    expect(opencode.env.PAPERCLIP_OPENCODE_SMALL_MODEL).toBeUndefined();
   });
   it("projects only a Bedrock API key and rejects general AWS access keys", () => {
     const routing = aiProviderRoutingSchema.parse({
@@ -169,6 +172,13 @@ describe("provider routing", () => {
     expect(opencode.env.PAPERCLIP_AI_PROVIDER_KEY).toBe("ds-key");
     expect(opencode.env.PAPERCLIP_AI_PROVIDER_URL).toBe("https://api.deepseek.com");
     expect(opencode.config.model).toBe("paperclip/deepseek-flash");
+    // The projected provider owns the only enabled provider, so the auxiliary
+    // title model must be pinned to it or OpenCode aborts the run.
+    expect(opencode.env.PAPERCLIP_OPENCODE_SMALL_MODEL).toBe("paperclip/deepseek-flash");
+    expect(JSON.parse(String(opencode.env.OPENCODE_CONFIG_CONTENT))).toMatchObject({
+      enabled_providers: ["paperclip"],
+      small_model: "paperclip/deepseek-flash",
+    });
     const hermes = managedProviderRouting(chat, "hermes_local", "ds-key", "deepseek-flash");
     expect(hermes.env.OPENAI_API_KEY).toBe("ds-key");
     expect(hermes.env.OPENAI_BASE_URL).toBe("https://api.deepseek.com");
@@ -206,5 +216,11 @@ describe("provider routing", () => {
     const codex = managedProviderRouting(chat, "codex_local", "k", "deepseek-flash", "xhigh");
     expect(codex.codexConfig.startsWith('model_reasoning_effort = "high"\nmodel_provider = "paperclip"')).toBe(true);
     expect(managedProviderRouting(chat, "codex_local", "k", "deepseek-flash").codexConfig).not.toContain("model_reasoning_effort");
+  });
+  it("skips OpenCode's model-availability pre-flight for the projected provider", () => {
+    const chat = aiProviderRoutingSchema.parse({ kind: "deepseek", protocol: "chat", auth: "bearer", models: [] });
+    const openrouter = aiProviderRoutingSchema.parse({ kind: "openrouter", protocol: "chat", auth: "bearer", models: [] });
+    expect(managedProviderRouting(chat, "opencode_local", "k", "deepseek-flash").env.OPENCODE_ALLOW_ALL_MODELS).toBe("1");
+    expect(managedProviderRouting(openrouter, "opencode_local", "k", "openrouter/x/y").env.OPENCODE_ALLOW_ALL_MODELS).toBeUndefined();
   });
 });
