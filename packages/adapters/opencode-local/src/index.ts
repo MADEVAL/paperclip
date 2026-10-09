@@ -1,6 +1,16 @@
 export const type = "opencode_local";
 export const label = "OpenCode";
 
+// Paperclip qualifies OpenCode 1.18.x for this adapter: the CLI JSONL contract
+// (`opencode run --format json`) and the injected runtime config shape are
+// verified against it. The Paperclip Runner pins this exact release; the direct
+// adapter enforces the supported major version at run time
+// (see `server/version.ts`), and the sandbox installer below pins the qualified
+// release so a managed install cannot silently drift onto a newer major (for
+// example OpenCode 2.x, whose server and plugin APIs are breaking changes).
+export const QUALIFIED_OPENCODE_VERSION = "1.18.34";
+export const SUPPORTED_OPENCODE_MAJOR_VERSION = 1;
+
 // Use OpenCode's official installer instead of `npm install -g opencode-ai`.
 // The npm package reifies four large Linux x64 prebuilt-binary subpackages
 // (linux-x64, linux-x64-musl, linux-x64-baseline, linux-x64-baseline-musl) in
@@ -16,6 +26,10 @@ export const label = "OpenCode";
 // otherwise fall back to `$HOME/.local/bin` (which is on the default PATH on
 // the exe.dev sandbox image and most modern home-managed Linux images).
 //
+// The installer is pinned to QUALIFIED_OPENCODE_VERSION via `--version` so a
+// sandbox always receives the release Paperclip qualifies rather than whatever
+// `latest` resolves to.
+//
 // Security tradeoff: this is `curl | bash` without a SHA-256 verification of
 // the install script. We accept this because:
 //   1. The install runs inside an isolated, ephemeral sandbox — blast radius
@@ -23,14 +37,13 @@ export const label = "OpenCode";
 //   2. The prior `npm install -g opencode-ai` is also unverified code
 //      execution from a third-party registry; this is not strictly worse.
 //   3. OpenCode does not publish per-release SHA-256 checksums in a stable
-//      location, and pinning a version + hash here would require manual
-//      version bumps on every OpenCode release.
+//      location, so we pin the release tag (not a digest).
 // The `set -e` (implied by Bash's default with `-fsSL` upstream of a piped
 // shell) and `curl -fsSL` give us fail-fast behavior on HTTP errors. If
 // OpenCode starts publishing a stable checksum/signature, switch to fetching
 // a versioned tarball + verifying the digest before exec.
 export const SANDBOX_INSTALL_COMMAND =
-  'curl -fsSL https://opencode.ai/install | bash && ' +
+  `curl -fsSL https://opencode.ai/install | bash -s -- --version ${QUALIFIED_OPENCODE_VERSION} && ` +
   'if [ -x "$HOME/.opencode/bin/opencode" ]; then ' +
   'if [ "$(id -u)" -eq 0 ]; then ' +
   'ln -sf "$HOME/.opencode/bin/opencode" /usr/local/bin/opencode; ' +
@@ -108,6 +121,10 @@ Notes:
 - OpenCode supports multiple providers and models. Use \
   \`opencode models\` to list available options in provider/model format.
 - Paperclip requires an explicit \`model\` value for \`opencode_local\` agents.
+- Paperclip qualifies OpenCode ${QUALIFIED_OPENCODE_VERSION} (1.x). A newer \
+  major (for example OpenCode 2.x) is detected before the run and rejected with \
+  an actionable error; set PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION=1 to \
+  bypass that guard for an unverified run.
 - Runs are executed with: opencode run --format json ...
 - Sessions are resumed with --session when stored session cwd matches current cwd.
 - The adapter sets OPENCODE_DISABLE_PROJECT_CONFIG=true to prevent OpenCode from \

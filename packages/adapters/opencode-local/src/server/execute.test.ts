@@ -8,11 +8,20 @@ vi.mock("@paperclipai/adapter-utils/execution-target", async (importOriginal) =>
   return { ...actual, runAdapterExecutionTargetProcess: vi.fn() };
 });
 
+// The real probe spawns `opencode --version`; unit tests below control the
+// reported version instead of launching a fake CLI.
+vi.mock("./version.js", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, probeOpenCodeCliVersion: vi.fn(async () => null) };
+});
+
 import { ensureRemoteOpenCodeModelConfiguredAndAvailable, execute } from "./execute.js";
 import { runAdapterExecutionTargetProcess } from "@paperclipai/adapter-utils/execution-target";
+import { probeOpenCodeCliVersion } from "./version.js";
 import { createPromptContextFixture } from "@paperclipai/adapter-utils/test-fixtures/prompt-context";
 
 const runProcessMock = vi.mocked(runAdapterExecutionTargetProcess);
+const versionProbeMock = vi.mocked(probeOpenCodeCliVersion);
 
 async function createSkillDir(root: string, name: string): Promise<string> {
   const skillDir = path.join(root, name);
@@ -348,5 +357,57 @@ describe("ensureRemoteOpenCodeModelConfiguredAndAvailable — probe is non-fatal
     await expect(
       ensureRemoteOpenCodeModelConfiguredAndAvailable({ ...base, model: "openai/gpt-5" }),
     ).rejects.toThrow("Configured OpenCode model is unavailable on the remote execution target");
+  });
+});
+
+describe("OpenCode version guard", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-version-"));
+    versionProbeMock.mockReset();
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  async function callExecute(extraEnv: Record<string, string> = {}) {
+    const commandPath = path.join(root, "opencode");
+    await fs.writeFile(commandPath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    runProcessMock.mockReset();
+    runProcessMock.mockResolvedValue(probeResult({
+      stdout: JSON.stringify({ type: "text", sessionID: "version-guard", part: { text: "ok" } }),
+    }));
+    return execute({
+      runId: "run-version-guard",
+      agent: { id: "agent-1", companyId: "company-1", name: "OpenCode", adapterType: "opencode_local", adapterConfig: {} },
+      runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
+      config: {
+        command: commandPath,
+        cwd: root,
+        model: "openai/gpt-5",
+        env: { OPENCODE_ALLOW_ALL_MODELS: "1", ...extraEnv },
+      },
+      context: {},
+      onLog: async () => {},
+    });
+  }
+
+  it("fails fast with an actionable message when OpenCode's major version is unsupported", async () => {
+    versionProbeMock.mockResolvedValue({ version: "2.0.1", major: 2, minor: 0, patch: 1, supported: false });
+    await expect(callExecute()).rejects.toThrow(/OpenCode 2\.0\.1 is not supported/);
+  });
+
+  it("runs normally when the qualified major version is installed", async () => {
+    versionProbeMock.mockResolvedValue({ version: "1.18.34", major: 1, minor: 18, patch: 34, supported: true });
+    const result = await callExecute();
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("allows an unverified major version when the escape hatch is set", async () => {
+    versionProbeMock.mockResolvedValue({ version: "2.0.1", major: 2, minor: 0, patch: 1, supported: false });
+    const result = await callExecute({ PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION: "1" });
+    expect(result.exitCode).toBe(0);
   });
 });

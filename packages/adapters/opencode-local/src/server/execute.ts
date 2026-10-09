@@ -64,6 +64,11 @@ import { removeMaintainerOnlySkillSymlinks } from "@paperclipai/adapter-utils/se
 import { prepareOpenCodeRuntimeConfig, prepareManagedOpenCodeRemoteHomes } from "./runtime-config.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 import { resolveOpenCodeSkillsHome } from "./skills.js";
+import {
+  allowsUnsupportedOpenCodeVersion,
+  probeOpenCodeCliVersion,
+  unsupportedOpenCodeVersionMessage,
+} from "./version.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -329,6 +334,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (authToken) {
     env.PAPERCLIP_API_KEY = authToken;
   }
+  let openCodeCliVersionNote: string | null = null;
   const preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({ env, config });
   const localRuntimeConfigHome =
     preparedRuntimeConfig.notes.length > 0 ? preparedRuntimeConfig.env.XDG_CONFIG_HOME : "";
@@ -365,6 +371,31 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       resolvedCommand,
     });
     if (!executionTargetIsRemote) {
+      // OpenCode 2.x is a breaking release (server and plugin APIs); the
+      // adapter's CLI JSONL contract and runtime config shape are qualified
+      // against 1.x only. Detect the installed version and fail fast with an
+      // actionable message instead of letting a mismatched CLI surface as an
+      // opaque `OpenCode exited with code 1`.
+      const cliVersion = await probeOpenCodeCliVersion({
+        command,
+        cwd,
+        env: runtimeEnv,
+      });
+      if (cliVersion) {
+        openCodeCliVersionNote = `OpenCode CLI version ${cliVersion.version}`;
+        await onLog(
+          "stdout",
+          `[paperclip] OpenCode CLI version ${cliVersion.version}.\n`,
+        );
+        if (!cliVersion.supported) {
+          const message = unsupportedOpenCodeVersionMessage(cliVersion);
+          if (allowsUnsupportedOpenCodeVersion(preparedRuntimeConfig.env)) {
+            await onLog("stdout", `[paperclip] Warning: ${message}\n`);
+          } else {
+            throw new Error(message);
+          }
+        }
+      }
       await ensureOpenCodeModelConfiguredAndAvailable({
         model,
         command,
@@ -546,6 +577,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
     const commandNotes = (() => {
       const notes = [...preparedRuntimeConfig.notes];
+      if (openCodeCliVersionNote) notes.push(openCodeCliVersionNote);
       if (!resolvedInstructionsFilePath) return notes;
       if (instructionsPrefix.length > 0) {
         notes.push(`Loaded agent instructions from ${resolvedInstructionsFilePath}`);

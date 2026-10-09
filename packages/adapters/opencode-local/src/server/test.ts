@@ -27,8 +27,12 @@ import {
 } from "@paperclipai/adapter-utils/execution-target";
 import { discoverOpenCodeModels, ensureOpenCodeModelConfiguredAndAvailable } from "./models.js";
 import { parseOpenCodeJsonl } from "./parse.js";
-import { SANDBOX_INSTALL_COMMAND } from "../index.js";
+import { QUALIFIED_OPENCODE_VERSION, SANDBOX_INSTALL_COMMAND } from "../index.js";
 import { prepareOpenCodeRuntimeConfig, prepareManagedOpenCodeRemoteHomes } from "./runtime-config.js";
+import {
+  probeOpenCodeCliVersion,
+  unsupportedOpenCodeVersionMessage,
+} from "./version.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -214,6 +218,26 @@ export async function testEnvironment(
           message: err instanceof Error ? err.message : "Command is not executable",
           detail: command,
         });
+      }
+      if (!targetIsRemote) {
+        // Local runs enforce the supported major version in `execute.ts`; surface
+        // the same diagnosis (with a remediation) here so the environment test
+        // catches an OpenCode 2.x install before a run fails opaquely.
+        const cliVersion = await probeOpenCodeCliVersion({ command, cwd, env: runtimeEnv });
+        if (cliVersion && !cliVersion.supported) {
+          checks.push({
+            code: "opencode_version_unsupported",
+            level: "error",
+            message: unsupportedOpenCodeVersionMessage(cliVersion),
+            hint: `Install OpenCode ${QUALIFIED_OPENCODE_VERSION}.`,
+          });
+        } else if (cliVersion) {
+          checks.push({
+            code: "opencode_version",
+            level: "info",
+            message: `OpenCode CLI version: ${cliVersion.version}`,
+          });
+        }
       }
     }
 
