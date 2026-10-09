@@ -186,7 +186,7 @@ function nativePermissionV2() {
 }
 
 function parsedPromptText(promptBody) {
-  const text = promptBody.parts?.[0]?.text ?? "";
+  const text = promptBody.parts?.[0]?.text ?? promptBody.text ?? "";
   try {
     return JSON.parse(text);
   } catch {
