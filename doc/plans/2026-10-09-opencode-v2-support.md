@@ -46,6 +46,23 @@ C (narrow per-directory allow) is intentionally not applied: under
 adapter can reliably derive the instructions directory but not the
 server-managed `file-sync` directory at config time.
 
+### Phase 1.2 - transient non-zero exit recovery
+
+`opencode run` 2.0.24 on the operator instance exited `1` after the agent had
+already streamed its final answer, with no `error` event, no failed tool, and
+no stderr. Comparing a succeeded run and the failed runs showed an identical
+final shape (`step_start` then `text`, no closing `step_finish`), so the exit
+code is not a reliable failure signal for that signature.
+
+- Capture a bounded raw stdout tail and recover a late structured error or tool
+  error from it (the returned stdout is capped, and the accounting stream's
+  compaction drops tool fields).
+- Include the last tool error in the failure message.
+- When the process exits non-zero with no error event, no failed tool, no
+  signal, and the last record is an assistant `text`, treat the run as complete
+  and note it. A real failure (provider error, tool error, signal, timeout) is
+  never recovered.
+
 ## Phase 1 - direct CLI adapter (`opencode_local`) - DONE
 
 Qualified both majors and made the CLI flags version-aware:

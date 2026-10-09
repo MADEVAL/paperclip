@@ -468,6 +468,42 @@ describe("OpenCode version guard", () => {
     expect(result.errorMessage).toContain("boom: command failed");
   });
 
+  it("treats a non-zero exit after a final answer as complete", async () => {
+    versionProbeMock.mockResolvedValue({ version: "2.0.24", major: 2, minor: 0, patch: 24, supported: true });
+    const result = await callExecute({}, {}, async (...callArgs: unknown[]) => {
+      const options = callArgs[4] as
+        | { onLog?: (stream: string, chunk: string) => Promise<void> }
+        | undefined;
+      for (const record of [
+        { type: "step_start", sessionID: "s" },
+        { type: "step_finish", sessionID: "s", part: { reason: "tool-calls" } },
+        { type: "step_start", sessionID: "s" },
+        { type: "text", sessionID: "s", part: { text: "Готово." } },
+      ]) {
+        await options?.onLog?.("stdout", `${JSON.stringify(record)}\n`);
+      }
+      return probeResult({ exitCode: 1, stdout: "", stderr: "" });
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.errorMessage).toBeNull();
+  });
+
+  it("does not recover a non-zero exit that did not end on a final answer", async () => {
+    versionProbeMock.mockResolvedValue({ version: "2.0.24", major: 2, minor: 0, patch: 24, supported: true });
+    const result = await callExecute({}, {}, async (...callArgs: unknown[]) => {
+      const options = callArgs[4] as
+        | { onLog?: (stream: string, chunk: string) => Promise<void> }
+        | undefined;
+      await options?.onLog?.(
+        "stdout",
+        `${JSON.stringify({ type: "step_start", sessionID: "s" })}\n`,
+      );
+      return probeResult({ exitCode: 1, stdout: "", stderr: "" });
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.errorMessage).toContain("OpenCode exited with code 1");
+  });
+
   it("allows an unverified major version when the escape hatch is set", async () => {
     versionProbeMock.mockResolvedValue({ version: "3.0.1", major: 3, minor: 0, patch: 1, supported: false });
     const result = await callExecute({ PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_VERSION: "1" });

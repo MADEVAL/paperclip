@@ -784,7 +784,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         parsed.usageComplete = retained.usageComplete;
         parsed.costUsd = retained.costUsd;
       }
-      return { proc, rawStderr: proc.stderr, parsed };
+      // OpenCode 2.x can exit non-zero after it already streamed the final
+      // assistant answer. Record the last JSONL record type so the result can
+      // tell a real mid-run failure apart from a spurious terminal exit.
+      const lastRecordLine = rawStdoutTail.split(/\r?\n/).filter(Boolean).at(-1) ?? "";
+      let lastRecordType = "";
+      try {
+        lastRecordType = asString(JSON.parse(lastRecordLine).type, "");
+      } catch {
+        lastRecordType = "";
+      }
+      return { proc, rawStderr: proc.stderr, parsed, lastRecordType };
     };
 
     const toResult = (
@@ -792,6 +802,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         proc: { exitCode: number | null; signal: string | null; timedOut: boolean; stdout: string; stderr: string; errorCode?: string | null };
         rawStderr: string;
         parsed: ReturnType<typeof parseOpenCodeJsonl>;
+        lastRecordType?: string;
       },
       clearSessionOnMissingSession = false,
     ): AdapterExecutionResult => {
@@ -836,7 +847,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const lastToolError = attempt.parsed.toolErrors.at(-1)?.trim() ?? "";
       const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
       const rawExitCode = attempt.proc.exitCode;
-      const synthesizedExitCode = parsedError && (rawExitCode ?? 0) === 0 ? 1 : rawExitCode;
+      // OpenCode 2.x can exit non-zero after it already streamed the final
+      // assistant answer (a transient terminal exit with no provider error and
+      // no failed tool). Recover only that narrow signature so an unattended
+      // task is not marked failed after the work is done. A real failure
+      // carries a provider error, a tool error, a signal, or a timeout and is
+      // never recovered here.
+      const completedFinalAnswer =
+        rawExitCode !== null &&
+        rawExitCode !== 0 &&
+        !attempt.proc.signal &&
+        parsedError === "" &&
+        attempt.parsed.toolErrors.length === 0 &&
+        attempt.lastRecordType === "text";
+      const synthesizedExitCode = completedFinalAnswer
+        ? 0
+        : parsedError && (rawExitCode ?? 0) === 0
+          ? 1
+          : rawExitCode;
+      if (completedFinalAnswer) {
+        void onLog(
+          "stderr",
+          "[paperclip] OpenCode exited non-zero after a final answer with no error; treating the run as complete.\n",
+        );
+      }
       const fallbackErrorMessage =
         parsedError ||
         lastToolError ||
@@ -848,7 +882,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         exitCode: synthesizedExitCode,
         signal: attempt.proc.signal,
         timedOut: false,
-        usageComplete: attempt.proc.exitCode === 0 && !attempt.proc.signal
+        usageComplete: (attempt.proc.exitCode === 0 || completedFinalAnswer) && !attempt.proc.signal
           && (attempt.parsed.usageComplete || attempt.parsed.costUsd != null),
         usageBasis: "per_run",
         errorMessage: (synthesizedExitCode ?? 0) === 0 ? null : fallbackErrorMessage,
