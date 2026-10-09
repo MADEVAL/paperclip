@@ -180,6 +180,11 @@ describe("provider routing", () => {
     expect(codex.codexConfig).toContain('wire_api = "responses"');
     expect(codex.codexConfig).toContain('base_url = "https://api.deepseek.com"');
     expect(codex.codexConfig).not.toContain("ds-key");
+    // Codex's own default model is an OpenAI model, which DeepSeek rejects, so
+    // the projected config must pin a DeepSeek model for the default path too.
+    expect(codex.config.model).toBe("deepseek-flash");
+    expect(managedProviderRouting(chat, "codex_local", "ds-key", "").config.model).toBe("deepseek-flash");
+    expect(managedProviderRouting(chat, "codex_local", "ds-key", "gpt-5.6-sol").config.model).toBe("deepseek-flash");
     const claude = managedProviderRouting(messages, "claude_local", "ds-key", "deepseek-flash");
     expect(claude.env.ANTHROPIC_BASE_URL).toBe("https://api.deepseek.com/anthropic");
     expect(claude.env.ANTHROPIC_AUTH_TOKEN).toBe("ds-key");

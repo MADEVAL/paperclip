@@ -29,6 +29,13 @@ export function managedProviderRouting(
     // DeepSeek normalizes the full effort domain, but pin it to low|high|max.
     const level = route.kind === "deepseek" ? deepseekReasoningEffort(effort) : undefined;
     codexConfig = `${level ? `model_reasoning_effort = ${JSON.stringify(level)}\n` : ""}model_provider = "paperclip"\n[model_providers.paperclip]\nname = "Paperclip connection"\nbase_url = ${JSON.stringify(baseUrl)}\nwire_api = "responses"\nrequires_openai_auth = false\n${route.auth === "none" ? "" : 'env_key = "PAPERCLIP_AI_PROVIDER_KEY"\n'}`;
+    if (route.kind === "deepseek") {
+      // Codex falls back to its own OpenAI default model when config.model is
+      // empty or names another provider's model. The DeepSeek endpoint rejects
+      // that, so pin the resolved DeepSeek model (defaulting to deepseek-flash)
+      // to keep the default setup path working.
+      config.model = model.toLowerCase().includes("deepseek") ? model : "deepseek-flash";
+    }
   } else if (harness === "claude_local") {
     // DeepSeek's Claude Code integration uses the `[1m]` window suffix on the
     // primary models only (not the haiku/subagent aliases).
