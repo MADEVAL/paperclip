@@ -719,6 +719,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
       const consumeAccounting = createOpenCodeJsonlParser();
       let hasAccounting = false;
+      // The returned stdout is capped for display. Capture a bounded raw tail of
+      // the full stream so a late structured error is still recoverable.
+      const maxRawTail = 256 * 1024;
+      let rawStdoutTail = "";
       const accountingLog = createUsageCheckpointLog(onLog, ctx.onUsage ?? (async () => {}), stdout => {
         hasAccounting = true;
         const parsed = consumeAccounting(stdout);
@@ -727,6 +731,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           costStatus: parsed.usageComplete || parsed.costUsd != null ? undefined : "unpriced",
           usageBasis: "per_run", provider, biller: resolveOpenCodeBiller(runtimeEnv, provider), billingType: "unknown", model, complete: false };
       });
+      const captureLog = async (stream: "stdout" | "stderr", chunk: string) => {
+        if (stream === "stdout") {
+          const next = rawStdoutTail + chunk;
+          rawStdoutTail = next.length > maxRawTail ? next.slice(-maxRawTail) : next;
+        }
+        await accountingLog(stream, chunk);
+      };
       const proc = await runAdapterExecutionTargetProcess(runId, runtimeExecutionTarget, command, args, {
         onProcessStopped: providerStop.beginInvocation(),
         cwd,
@@ -736,7 +747,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         graceSec,
         onSpawn,
         onRuntimeProgress: ctx.onRuntimeProgress,
-        onLog: accountingLog,
+        onLog: captureLog,
         runLogTail: paperclipBridge?.runLogTail,
         settleRunDisposition: paperclipBridge?.settleRunDisposition,
       });
@@ -749,6 +760,23 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       // Display output is capped by the process transport. Keep accounting
       // from the full stream, including when no checkpoint callback is installed.
       const parsed = parseOpenCodeJsonl(proc.stdout);
+      // The accounting stream saw every record even when the display stream was
+      // capped, so recover a late structured error or tool error from it. Without
+      // this, a long run that exits non-zero after the cap surfaces only
+      // "OpenCode exited with code 1".
+      const tailParsed = parseOpenCodeJsonl(rawStdoutTail);
+      if (parsed.errorMessage === null && tailParsed.errorMessage !== null) {
+        parsed.errorMessage = tailParsed.errorMessage;
+      }
+      if (parsed.toolErrors.length === 0 && tailParsed.toolErrors.length > 0) {
+        parsed.toolErrors = tailParsed.toolErrors;
+      }
+      if (parsed.errorMessage === null && retainedAccounting.errorMessage !== null) {
+        parsed.errorMessage = retainedAccounting.errorMessage;
+      }
+      if (parsed.toolErrors.length === 0 && retainedAccounting.toolErrors.length > 0) {
+        parsed.toolErrors = retainedAccounting.toolErrors;
+      }
       if (hasAccounting) {
         const retained = consumeAccounting("");
         parsed.usage = retained.usage;
@@ -805,11 +833,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         : null;
 
       const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
+      const lastToolError = attempt.parsed.toolErrors.at(-1)?.trim() ?? "";
       const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
       const rawExitCode = attempt.proc.exitCode;
       const synthesizedExitCode = parsedError && (rawExitCode ?? 0) === 0 ? 1 : rawExitCode;
       const fallbackErrorMessage =
         parsedError ||
+        lastToolError ||
         stderrLine ||
         `OpenCode exited with code ${synthesizedExitCode ?? -1}`;
       const modelId = model || null;

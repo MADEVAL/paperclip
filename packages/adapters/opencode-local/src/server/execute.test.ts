@@ -375,13 +375,18 @@ describe("OpenCode version guard", () => {
   async function callExecute(
     extraEnv: Record<string, string> = {},
     extraConfig: Record<string, unknown> = {},
+    runImpl?: (...args: unknown[]) => unknown,
   ) {
     const commandPath = path.join(root, "opencode");
     await fs.writeFile(commandPath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     runProcessMock.mockReset();
-    runProcessMock.mockResolvedValue(probeResult({
-      stdout: JSON.stringify({ type: "text", sessionID: "version-guard", part: { text: "ok" } }),
-    }));
+    if (runImpl) {
+      runProcessMock.mockImplementation(runImpl as never);
+    } else {
+      runProcessMock.mockResolvedValue(probeResult({
+        stdout: JSON.stringify({ type: "text", sessionID: "version-guard", part: { text: "ok" } }),
+      }));
+    }
     return execute({
       runId: "run-version-guard",
       agent: { id: "agent-1", companyId: "company-1", name: "OpenCode", adapterType: "opencode_local", adapterConfig: {} },
@@ -441,6 +446,26 @@ describe("OpenCode version guard", () => {
     versionProbeMock.mockResolvedValue({ version: "1.18.34", major: 1, minor: 18, patch: 34, supported: true });
     await callExecute({}, { dangerouslySkipPermissions: false });
     expect(lastExecutionArgs()).not.toContain("--auto");
+  });
+
+  it("surfaces a tool error when OpenCode exits non-zero with capped output", async () => {
+    versionProbeMock.mockResolvedValue({ version: "1.18.34", major: 1, minor: 18, patch: 34, supported: true });
+    const result = await callExecute({}, {}, async (...callArgs: unknown[]) => {
+      const options = callArgs[4] as
+        | { onLog?: (stream: string, chunk: string) => Promise<void> }
+        | undefined;
+      await options?.onLog?.(
+        "stdout",
+        `${JSON.stringify({
+          type: "tool_use",
+          sessionID: "ses_x",
+          part: { state: { status: "error", error: "boom: command failed" } },
+        })}\n`,
+      );
+      return probeResult({ exitCode: 1, stdout: "", stderr: "" });
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.errorMessage).toContain("boom: command failed");
   });
 
   it("allows an unverified major version when the escape hatch is set", async () => {
