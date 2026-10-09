@@ -135,6 +135,7 @@ function Setup({
   const showModel = !isDot && !["cursor_cloud", "hermes_gateway"].includes(adapterType);
   const [allowUnmeteredProvider, setAllowUnmeteredProvider] = useState(false);
   const [gatewayUrl, setGatewayUrl] = useState("");
+  const [gatewayPassword, setGatewayPassword] = useState("");
   const [kimiModel, setKimiModel] = useState("");
   const [kimiBaseUrl, setKimiBaseUrl] = useState("");
   const [kimiProtocol, setKimiProtocol] = useState("kimi");
@@ -380,6 +381,10 @@ function Setup({
         ...(branch.trim() ? { repoStartingRef: branch.trim() } : {}),
       });
     if (adapterType === "hermes_gateway") config.apiBaseUrl = gatewayUrl.trim();
+    if (adapterType === "opencode_gateway") {
+      config.apiBaseUrl = gatewayUrl.trim();
+      config.password = gatewayPassword.trim();
+    }
     if (usingKimiApi) {
       // --model overrides Kimi's environment-defined model. Let KIMI_MODEL_NAME win.
       delete config.model;
@@ -422,6 +427,18 @@ function Setup({
       } catch {
         throw new Error("Enter the Hermes API base URL.");
       }
+    }
+    if (adapterType === "opencode_gateway") {
+      try {
+        const url = new URL(gatewayUrl.trim());
+        if (!["https:", "http:"].includes(url.protocol)) throw new Error();
+      } catch {
+        throw new Error("Enter the OpenCode server base URL (http://host:port).");
+      }
+      if (!gatewayPassword.trim())
+        throw new Error("Enter the OpenCode server password (OPENCODE_SERVER_PASSWORD).");
+      if (!model.trim())
+        throw new Error("Enter an OpenCode model in provider/model format.");
     }
     if (usingKimiApi && !kimiModel.trim())
       throw new Error("Enter the Kimi API model name.");
@@ -895,8 +912,8 @@ function Setup({
                                 }}
                                 open={modelOpen}
                                 onOpenChange={setModelOpen}
-                                allowDefault={!multiProvider}
-                                required={multiProvider}
+                                allowDefault={!multiProvider && adapterType !== "opencode_gateway"}
+                                required={multiProvider || adapterType === "opencode_gateway"}
                                 creatable
                                 groupByProvider={multiProvider && !connectionModels}
                                 preserveOrder={Boolean(connectionModels) || adapterCuratesModelOrder(brandType)}
@@ -1056,6 +1073,40 @@ function Setup({
                             />
                           </Field>
                         )}
+                        {adapterType === "opencode_gateway" && (
+                          <div className="grid gap-5 sm:grid-cols-2">
+                            <Field
+                              label="OpenCode server URL"
+                              hint="An already-running opencode serve reachable from Paperclip, for example http://192.168.0.119:4096. Paperclip does not launch it."
+                            >
+                              <Input
+                                aria-label="OpenCode server URL"
+                                value={gatewayUrl}
+                                onChange={(event) => {
+                                  setGatewayUrl(event.target.value);
+                                  resetTest();
+                                }}
+                                placeholder="http://127.0.0.1:4096"
+                              />
+                            </Field>
+                            <Field
+                              label="Server password"
+                              hint="The OPENCODE_SERVER_PASSWORD the server was started with."
+                            >
+                              <Input
+                                aria-label="OpenCode server password"
+                                type="password"
+                                autoComplete="off"
+                                value={gatewayPassword}
+                                onChange={(event) => {
+                                  setGatewayPassword(event.target.value);
+                                  resetTest();
+                                }}
+                                placeholder="Required"
+                              />
+                            </Field>
+                          </div>
+                        )}
                         {usingKimiApi && (
                           <div className="grid gap-5 sm:grid-cols-2">
                             <Field label="Kimi API model name">
@@ -1129,7 +1180,7 @@ function Setup({
                           </div>
                         )}
                       </section>
-                      {!["cursor_cloud", "hermes_gateway"].includes(
+                      {!["cursor_cloud", "hermes_gateway", "opencode_gateway"].includes(
                         adapterType,
                       ) && (
                         <section className="space-y-5">
