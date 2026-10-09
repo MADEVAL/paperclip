@@ -119,6 +119,16 @@ import {
   agentConfigurationDoc as openclawGatewayAgentConfigurationDoc,
   models as openclawGatewayModels,
 } from "@paperclipai/adapter-openclaw-gateway";
+import {
+  execute as openCodeGatewayExecute,
+  testEnvironment as openCodeGatewayTestEnvironment,
+  getConfigSchema as getOpenCodeGatewayConfigSchema,
+  sessionCodec as openCodeGatewaySessionCodec,
+} from "@paperclipai/adapter-opencode-gateway/server";
+import {
+  agentConfigurationDoc as openCodeGatewayAgentConfigurationDoc,
+  models as openCodeGatewayModels,
+} from "@paperclipai/adapter-opencode-gateway";
 import { listCodexModels, refreshCodexModels } from "./codex-models.js";
 import { listCursorModels } from "./cursor-models.js";
 import {
@@ -837,6 +847,20 @@ const openclawGatewayAdapter: ServerAdapterModule = {
   agentConfigurationDoc: openclawGatewayAgentConfigurationDoc,
 };
 
+const openCodeGatewayAdapter: ServerAdapterModule = {
+  type: "opencode_gateway",
+  runtimeToolDelivery: "invocation_context",
+  execute: openCodeGatewayExecute,
+  testEnvironment: openCodeGatewayTestEnvironment,
+  sessionCodec: openCodeGatewaySessionCodec,
+  models: openCodeGatewayModels,
+  supportsLocalAgentJwt: false,
+  supportsInstructionsBundle: false,
+  requiresMaterializedRuntimeSkills: false,
+  getConfigSchema: getOpenCodeGatewayConfigSchema,
+  agentConfigurationDoc: openCodeGatewayAgentConfigurationDoc,
+};
+
 const openCodeLocalAdapter: ServerAdapterModule = {
   type: "opencode_local",
   runtimeToolDelivery: "environment",
@@ -905,6 +929,7 @@ function registerBuiltInAdapters() {
     hermesGatewayAdapter,
     hermesLocalAdapter,
     openclawGatewayAdapter,
+    openCodeGatewayAdapter,
     processAdapter,
     httpAdapter,
   ]) {

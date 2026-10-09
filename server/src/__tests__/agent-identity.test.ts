@@ -52,7 +52,7 @@ describe("agent cryptographic identity", () => {
     const agent = await oldAgent();
     expect(await agentIdentityService(db).getPublicIdentity(companyId, agent.id)).toBeNull();
     expect(await db.select().from(agentIdentityKeys).where(eq(agentIdentityKeys.agentId, agent.id))).toHaveLength(0);
-    for (const type of ["http", "openclaw_gateway", "hermes_gateway"]) expect(supportsManagedAgentIdentity(type)).toBe(false);
+    for (const type of ["http", "openclaw_gateway", "hermes_gateway", "opencode_gateway"]) expect(supportsManagedAgentIdentity(type)).toBe(false);
     for (const provider of ["claude_managed", "aws_agentcore"]) expect(supportsManagedAgentIdentity("paperclip_runner", { provider })).toBe(false);
     expect(supportsManagedAgentIdentity("paperclip_runner", { provider: "codex" }, "claude_managed_agents_api")).toBe(false);
     expect(supportsManagedAgentIdentity("paperclip_runner", { provider: "claude_managed" }, "codex_app_server")).toBe(true);
