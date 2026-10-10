@@ -461,7 +461,7 @@ describe("capability-gated connection tool refresh", () => {
 
 it("wires exact-session recovery and guarded selected identity into heartbeat persistence", () => {
   const source = readFileSync(
-    new URL("../heartbeat.ts", import.meta.url),
+    new URL("../heartbeat/runtime-selection.ts", import.meta.url),
     "utf8",
   );
   expect(source).toContain("await findNativeSessionResumeRun(db,");
@@ -1921,6 +1921,18 @@ describe("rebindNativeSessionCheckpoint", () => {
       // Deployed v13 local catalog before canonical finish/block descriptions.
       retainedFingerprint:
         "sha256:68a51d34e091c55ee5d0d2b563153454dd727d72db16e6a27c358d342ae489c9",
+    },
+    {
+      contract: "GitHub working-comment tools",
+      // Deployed v14 threads retain the catalog without update_comment.
+      retainedFingerprint:
+        "sha256:134a7dbd526179aff57f91c261bb653e83db51c20492efab5c26a5ce618792c8",
+    },
+    {
+      contract: "GitHub instruction skill selection",
+      // Deployed v15 remote threads omitted configured skills from native turns.
+      retainedFingerprint:
+        "sha256:f12fe3b1bf5d63b7954d8ab16f57764874806ab49acff7c6582c4de007f4ed4d",
     },
     {
       contract: "task-bound human-input description",

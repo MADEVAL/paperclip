@@ -102,6 +102,11 @@ API responses and MCP transports keep their existing compression behavior.
 
 The board UI Storybook keeps stories and Storybook config under `ui/storybook/` so component review files stay out of the app source routes.
 
+**Chat & Comments → Human identity** covers other-human names and avatars on
+left-aligned task messages alongside agents; only the viewer’s own messages are blue/right-aligned. Its review guide explains the data flow; the task journey uses representative
+fixtures in the production shell and thread with an agent and two humans, both
+human viewer perspectives, light mode, and mobile.
+
 ```sh
 pnpm storybook
 pnpm build-storybook
@@ -557,6 +562,18 @@ or dependency postinstall script is required. This also works when installation
 scripts are disabled. The published server declares the same pinned dependency
 as the source Runner package.
 
+For native OpenCode and Cursor on Daytona, a complete installed Paperclip release
+also selects its packaged Linux daemon and provider-pack identity automatically.
+Use the matching Paperclip Daytona image: the controller verifies the image's
+pack manifest, executable hashes, bridge tree, and pinned versions before launch.
+The controller's operating system does not determine the remote daemon target.
+
+A plain Daytona sandbox image does not contain this provider pack. Custom images
+and source-development launchers must supply a verified Linux provider pack and
+daemon through the existing remote artifact overrides; see
+[the remote E2E setup](../tests/runner-e2e/README.md#match-the-local-controller-package-to-the-daytona-image).
+An explicit override remains authoritative and fails closed if invalid.
+
 ## One-Command Local Run
 
 For a first-time local install, you can bootstrap and run in one command:
@@ -697,6 +714,11 @@ thread. Select the bot from Slack's @mention suggestions so the message includes
 a real mention. **Done** finishes setup once webhook verification and required
 account linking are complete, whether or not a test message was sent. The
 separate strict connection-test API retains its conversation and delivery checks.
+
+New Slack conversations receive default communication guidance that requires a
+clickable link to each task the agent creates. Agents use the public task URL
+from Paperclip tools or task context and report when a link is unavailable.
+Existing conversations keep their original communication guidance snapshot.
 
 ### Chat activity pagination and callback diagnostics
 
@@ -1259,7 +1281,7 @@ It owns bounded run projections, database encoding checks, task session reads an
 writes, explicit resumes, session compaction, and usage/billing helpers.
 `createHeartbeatRunState(db)` binds these operations without doing database work
 during construction. The encoding-check cache belongs to each factory instance.
-`heartbeat.ts` keeps run execution and session-goal recovery, and re-exports the
+`heartbeat.ts` keeps run execution and re-exports the
 existing public helpers. Keep session policy changes separate from run
 orchestration changes.
 
@@ -1308,6 +1330,52 @@ and cancellation maps so scheduler and route instances observe the same owners.
 Forwarding callbacks preserve construction order for budget, retry, recovery,
 and queue services. Existing public helpers remain re-exported by `heartbeat.ts`.
 Keep cancellation policy changes separate from this extraction and execution.
+
+Scheduling is in `server/src/services/heartbeat/scheduling.ts`. It owns timer
+ticks, issue-monitor claims and dispatch, exhausted-monitor recovery, and
+session-goal recovery. `createHeartbeatScheduling` binds explicit dependencies
+without querying or starting timers. Queue admission, heartbeat policy parsing,
+and atomic timer claims stay in `queue.ts`; the service supplies those operations
+and the current scheduling-suppression and worktree-cutoff callbacks. Monitor
+claims remain database-scoped so separate scheduler instances cannot dispatch
+the same claim. The public heartbeat methods keep their existing signatures.
+Keep scheduling policy changes separate from this extraction and execution.
+
+Run completion is in `server/src/services/heartbeat/run-completion.ts`.
+`createHeartbeatRunCompletion` binds terminal result persistence, accounting,
+response presentation, task-session updates, and execution/setup failure handling.
+The executor calls these handlers from the original try/catch boundaries. It
+retains native recovery exceptions, dispatch ownership, and the outer cleanup.
+Completion reads the shared Stop barriers, uses live output getters, and reports
+trace finalization immediately so a later error cannot lose cleanup state.
+Existing public failure helpers remain re-exported by `heartbeat.ts`.
+Keep completion policy changes separate from this extraction and dispatch.
+
+Runtime selection is in `server/src/services/heartbeat/runtime-selection.ts`.
+`selectHeartbeatRuntime` constructs or restores native execution inputs, selects
+completion contracts and sessions, and persists native or legacy runtime choices.
+Native selection retains the row lock that serializes it with cancellation and
+controller lease renewal. The executor receives an explicit selection result;
+lifecycle and ownership callbacks update its teardown state immediately, including
+when preparation later throws. Public sandbox lifecycle and model fallback helpers
+remain re-exported by `heartbeat.ts`.
+
+Workspace preparation is in `server/src/services/heartbeat/workspace-preparation.ts`.
+`prepareHeartbeatWorkspace` resolves and provisions the workspace, persists its
+metadata and issue binding, then acquires and realizes the execution environment.
+It preserves the immutable workspace binding used by native recovery and records
+preparation spans even when acquisition or realization fails. The executor retains
+environment selection, dispatch gates, and terminal lease cleanup. Persistence
+failures still clean newly created workspace artifacts before propagating.
+
+Runtime execution is in `server/src/services/heartbeat/runtime-execution.ts`.
+`executeHeartbeatRuntime` dispatches a prepared native session or legacy adapter,
+captures usage, finalizes workspace operations, and releases gateway tokens and
+instruction copies. The executor supplies the atomic dispatch gate and retains
+admission, terminal run status, retry handling, and outer lease cleanup. An explicit
+dispatch result preserves early cancellation returns; ownership callbacks update
+teardown state before errors propagate. Instruction getters retain updates made
+during provider execution. Keep policy changes separate from this extraction.
 
 ## Wake Context Delivery
 

@@ -17,6 +17,7 @@ import { CONFIGURATION_INCOMPLETE_FAILURE_CODE } from "./run-preparation.js";
 import { WORKSPACE_VALIDATION_FAILURE_CODE } from "./workspaces.js";
 import { boundHeartbeatRunEventPayloadForStorage } from "./run-log.js";
 import { preserveWorkspaceRestoreRecoveryMetadata } from "../workspace-restore-recovery-state.js";
+import { pendingNativeWorkspaceFinalizationCondition } from "../native-runtime/native-workspace-finalization-state.js";
 import { activeIssueInteractionCondition } from "../issue-question-context.js";
 import {
   nativeRetryCancellationCommitCondition,
@@ -45,6 +46,7 @@ import {
   inArray,
   isNull,
   ne,
+  not,
   notInArray,
   or,
   sql,
@@ -148,6 +150,7 @@ import {
   reviewPathConsumedRefFromRun,
 } from "../recovery/review-path-recovery.js";
 import { resolveRequiredSuccessfulRunHandoffOnValidPath } from "../successful-run-handoff-state.js";
+import { escalateExhaustedIssueReviewPathRecovery } from "../recovery/review-path-recovery-escalation.js";
 import {
   redactCurrentUserText,
   redactCurrentUserValue,
@@ -543,9 +546,10 @@ function buildRunEventRuntimeProgress(input: {
 export async function persistHeartbeatRunProcessMetadata(
   db: Db,
   runId: string,
-  meta: { pid: number; processGroupId: number | null; startedAt: string },
+  meta: { pid: number; processGroupId: number | null; startedAt: string; targetKind?: "local" | "remote" },
 ) {
-  const observedStartedAt = await readProcessStartedAt(meta.pid).catch(
+  // A sandbox PID belongs to a different host and may collide with a local PID.
+  const observedStartedAt = meta.targetKind === "remote" ? null : await readProcessStartedAt(meta.pid).catch(
     () => null,
   );
   const startedAt = new Date(observedStartedAt ?? meta.startedAt);
@@ -1091,11 +1095,12 @@ export function createHeartbeatLifecycle(db: Db, dependencies: HeartbeatLifecycl
     // fromStatuses can name a terminal status as its own source (for example,
     // an idempotent "still failed" patch), so the write below is not always a
     // genuine transition. Read the pre-write status to tell the two apart.
-    const previousStatus = await db
-      .select()
+    const previous = await db
+      .select({ run: heartbeatRuns, rowVersion: sql<string>`${heartbeatRuns}.xmin::text` })
       .from(heartbeatRuns)
       .where(eq(heartbeatRuns.id, runId))
       .then((rows) => rows[0] ?? null);
+    const previousStatus = previous?.run ?? null;
 
     if (previousStatus && (status === "cancelled" || status === "interrupted")) {
       patch = { ...patch, resultJson: cancellationResultJson(previousStatus, status, patch?.resultJson, patch?.errorCode, patch?.error) };
@@ -1150,6 +1155,19 @@ export function createHeartbeatLifecycle(db: Db, dependencies: HeartbeatLifecycl
               and(
                 eq(heartbeatRuns.id, runId),
                 inArray(heartbeatRuns.status, fromStatuses),
+                // A result can commit after the orphan candidate was read.
+                // Reject that stale process-loss transition before reporting,
+                // issue promotion, or release of the unfinished source lease.
+                ...(status === "failed" && patch?.errorCode === "process_lost"
+                  ? [
+                    not(pendingNativeWorkspaceFinalizationCondition(db)),
+                    // Result publication locks and updates this heartbeat in
+                    // its transaction. If this UPDATE waited behind it, the
+                    // joined tables can still use the older statement snapshot;
+                    // the exact tuple fence also rejects that blocked writer.
+                    sql`${heartbeatRuns}.xmin::text = ${previous?.rowVersion ?? null}`,
+                  ]
+                  : []),
                 ...(cancellationCondition ? [cancellationCondition] : []),
                 ...(isHeartbeatRunTerminalStatus(status)
                   ? [nativeRunnerOwnershipNotHeldCondition()]
@@ -1716,7 +1734,7 @@ export function createHeartbeatLifecycle(db: Db, dependencies: HeartbeatLifecycl
                 eq(issueThreadInteractions.companyId, issue.companyId),
                 eq(issueThreadInteractions.issueId, issue.id),
                 eq(issueThreadInteractions.status, "pending"),
-                activeIssueInteractionCondition(),
+                activeIssueInteractionCondition({ runId: run.id }),
               ),
             )
             .limit(1)
@@ -1970,6 +1988,10 @@ export function createHeartbeatLifecycle(db: Db, dependencies: HeartbeatLifecycl
       reviewAttention,
       existingWake: Boolean(existingWake),
     });
+    if (decision.kind === "exhausted") {
+      await escalateExhaustedIssueReviewPathRecovery(db, { run, issueId: issue.id });
+      return;
+    }
     if (decision.kind !== "enqueue") return;
 
     const recoveryRun = await enqueueWakeup(issue.assigneeAgentId, {
@@ -2097,7 +2119,7 @@ export function createHeartbeatLifecycle(db: Db, dependencies: HeartbeatLifecycl
 
   async function persistRunProcessMetadata(
     runId: string,
-    meta: { pid: number; processGroupId: number | null; startedAt: string },
+    meta: { pid: number; processGroupId: number | null; startedAt: string; targetKind?: "local" | "remote" },
   ) {
     return persistHeartbeatRunProcessMetadata(db, runId, meta);
   }

@@ -25,6 +25,7 @@ const apiPrefixes: Record<string, string> = {
   "announcements.ts": "/api",
   "ai-connections.ts": "/api",
   "decision-models.ts": "/api",
+  "fast-responses.ts": "/api",
   "attention.ts": "/api",
   "approvals.ts": "/api",
   "assets.ts": "/api",
@@ -79,12 +80,14 @@ const apiPrefixes: Record<string, string> = {
   "status-cards.ts": "/api",
   "teams-catalog.ts": "/api",
   "tool-access.ts": "/api",
+  "voice-sessions.ts": "/api",
   "tool-gateway.ts": "/api",
   "user-profiles.ts": "/api",
 };
 
 const ROUTE_LITERAL_PATTERN =
   /router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]/g;
+const ROUTE_ARRAY_PATTERN = /router\.(get|post|put|patch|delete)\(\s*\[([^\]]+)\]/g;
 const ROUTER_METHOD_PATTERN = /router\.(get|post|put|patch|delete)\(/;
 const HTTP_METHODS = new Set([
   "get",
@@ -106,6 +109,8 @@ const explicitOpenApiOperationCoverageExclusions = new Set([
   "POST /api/customer-success/v1/read",
   // OAuth discovery and protocol endpoints have their own metadata contract;
   // browser connection-management operations remain documented in the board API.
+  // Markdown rendering of the separately documented assistant setup page.
+  "GET /api/mcp/setup.md",
   "GET /.well-known/oauth-authorization-server",
   "POST /mcp/oauth/register",
   "POST /mcp/oauth/device_authorization",
@@ -123,6 +128,8 @@ const explicitOpenApiOperationCoverageExclusions = new Set([
   // board API document, while this exact exclusion keeps route coverage honest.
   "POST /api/chat-webhooks/agentmail/{publicId}",
   "POST /api/chat-webhooks/{publicId}/{provider}",
+  "POST /api/voice-webhooks/{publicId}/events",
+  "POST /api/voice-webhooks/{publicId}/tools",
 ]);
 
 // The set of contract-first routes whose OpenAPI document leads the mounted
@@ -165,6 +172,7 @@ function resolveMountedPath(file: string, prefix: string, routePath: string) {
   ) {
     return routePath;
   }
+  if (file === "voice-sessions.ts" && routePath.startsWith("/api/voice-webhooks/")) return routePath;
   if (file === "tool-gateway.ts" && routePath.startsWith("/mcp/gateways/")) {
     return routePath;
   }
@@ -212,6 +220,14 @@ function loadActualRoutes() {
         excludedRoutes.add(operation);
       } else {
         routes.add(operation);
+      }
+    }
+
+    for (const match of source.matchAll(ROUTE_ARRAY_PATTERN)) {
+      for (const literal of match[2].matchAll(/["'`]([^"'`]+)["'`]/g)) {
+        const operation = `${match[1].toUpperCase()} ${normalizeExpressPath(resolveMountedPath(file, prefix, literal[1]))}`;
+        if (explicitOpenApiOperationCoverageExclusions.has(operation)) excludedRoutes.add(operation);
+        else routes.add(operation);
       }
     }
 
@@ -286,6 +302,19 @@ describe("openapi routes", () => {
     expect(properties.status.enum).toEqual(["paused", "idle", "terminated"]);
     expect(properties).toHaveProperty("name");
     expect(properties).toHaveProperty("budgetMonthlyCents");
+  });
+
+  it("documents public Dot pairing capabilities while ordinary consent keeps board authentication", () => {
+    const spec = buildOpenApiSpec() as any;
+    for (const [method, path] of [
+      ["get", "/api/dot-mcp/requests/{id}"],
+      ["post", "/api/dot-mcp/requests/{id}/dot-pairing"],
+      ["post", "/api/dot-mcp/requests/{id}/dot-pairing/preview"],
+    ]) {
+      expect(spec.paths[path][method].security).toEqual([]);
+      expect(spec.paths[path][method].responses["404"]).toBeDefined();
+    }
+    expect(spec.paths["/api/mcp/requests/{id}/consent"].post.security).not.toEqual([]);
   });
 
   it("documents manager-only task privacy hints without protected scope identity", () => {
@@ -597,7 +626,7 @@ describe("openapi routes", () => {
         properties: {
           provider: {
             type: "string",
-            enum: ["slack", "github", "discord", "microsoft-teams", "telegram", "imessage-photon"],
+            enum: ["slack", "github", "discord", "microsoft-teams", "telegram", "speko", "imessage-photon"],
           },
           assignedAgentId: { type: "string", format: "uuid" },
         },
@@ -822,6 +851,20 @@ describe("openapi routes", () => {
     ).toBeUndefined();
   });
 
+  it("documents session-bound voice authority without durable credentials", () => {
+    const {spec} = loadSpecRoutes();
+    const start = spec.paths["/api/companies/{companyId}/voice-sessions"].post;
+    expect(start.security).toEqual([{BoardSessionAuth: []}]);
+    expect(start["x-paperclip-authorization"]).toEqual({actor: "board", sessionBound: true});
+    expect(start.requestBody.content["application/json"].schema.required).toEqual(expect.arrayContaining(["endpointId", "idempotencyKey"]));
+    expect(start.responses["201"]).toBeDefined();
+    expect(JSON.stringify(start.responses)).not.toContain("signingSecret");
+    expect(spec.paths["/api/voice-webhooks/{publicId}/tools"]).toBeUndefined();
+    expect(spec.paths["/api/voice-webhooks/{publicId}/events"]).toBeUndefined();
+    const decision=spec.paths["/api/companies/{companyId}/voice-phone/{endpointId}/incoming/{callId}"].post;
+    expect(decision.requestBody.content["application/json"].schema.required).toEqual(expect.arrayContaining(["approve", "approvalCode"]));
+  });
+
   it("covers the mounted server routes exactly", () => {
     const {
       routes: actualRoutes,
@@ -894,6 +937,47 @@ describe("openapi routes", () => {
     }
     expect(replacement.requestBody.content["application/json"].schema.required).toContain("repositoryIds");
     expect(replacement.responses["422"]).toBeDefined();
+  });
+
+  it("documents the manager-only GitHub wizard and compatible owner-aware registration", () => {
+    const { spec } = loadSpecRoutes();
+    for (const [suffix, method] of [["draft", "put"], ["setup", "post"], ["identity/start", "post"], ["identity/confirm", "post"]]) {
+      const operation = spec.paths[`/api/chat-endpoints/{endpointId}/github/${suffix}`][method];
+      expect(operation["x-paperclip-authorization"]).toEqual({ actor: "board" });
+      expect(operation.security).toEqual([{ BoardSessionAuth: [] }, { BoardApiKeyAuth: [] }]);
+    }
+    const registration = spec.paths["/api/chat-endpoints/{endpointId}/github/registration"].post;
+    const input = registration.requestBody.content["application/json"].schema;
+    expect(input.properties.ownerType.enum).toEqual(["personal", "organization"]);
+    expect(input.required).not.toContain("ownerType");
+    const response = registration.responses["200"].content["application/json"].schema;
+    expect(response.oneOf ?? response.anyOf).toHaveLength(2);
+  });
+
+  it("documents GitHub recovery, draft receipts, paged repositories and old review lookups", () => {
+    const { spec } = loadSpecRoutes();
+    const root = "/api/chat-endpoints/{endpointId}/github/";
+    const setup = spec.paths[root + "setup"].post.responses["200"].content["application/json"].schema;
+    expect(setup.properties.restartableRegistrationId.format).toBe("uuid");
+    const restart = spec.paths[root + "registration/restart"].post;
+    expect(restart["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    const restartInput = restart.requestBody.content["application/json"].schema;
+    expect(restartInput.required).toEqual(expect.arrayContaining(["registrationId", "appNotCreated"]));
+    expect(restartInput.properties.appNotCreated.enum ?? [restartInput.properties.appNotCreated.const]).toEqual([true]);
+    const receipt = spec.paths[root + "draft"].put.responses["200"].content["application/json"].schema;
+    expect(receipt.required).toEqual(["saved"]);
+    expect(receipt.properties).not.toHaveProperty("state");
+    const app = spec.paths[root + "app"].post.requestBody.content["application/json"].schema;
+    expect(app.properties.clientId).toBeDefined();
+    expect(app.properties.clientSecret).toBeDefined();
+    expect(app.required).not.toContain("clientId");
+    const page = spec.paths[root + "repositories"].get;
+    expect(page.parameters.map((param: { name: string }) => param.name)).toEqual(expect.arrayContaining(["endpointId", "offset", "limit", "search"]));
+    expect(page.responses["200"].content["application/json"].schema.properties).toHaveProperty("totalCount");
+    expect(spec.paths[root + "repositories/access"].put["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    const review = spec.paths[root + "reviews/{reviewId}"].get;
+    expect(review.parameters.map((param: { name: string }) => param.name)).toEqual(["endpointId", "reviewId"]);
+    expect(review.responses["404"]).toBeDefined();
   });
 
   it("documents auth and reviewed response-code invariants", () => {
