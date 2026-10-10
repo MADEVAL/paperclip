@@ -1,3 +1,5 @@
+import { FALLBACK_OPENCODE_FREE_MODELS } from "./server/free-models.js";
+
 export const type = "opencode_local";
 export const label = "OpenCode";
 
@@ -86,6 +88,7 @@ export const models: Array<{ id: string; label: string }> = [
   { id: "openai/gpt-5.2", label: "openai/gpt-5.2" },
   { id: "openai/gpt-5.1-codex-max", label: "openai/gpt-5.1-codex-max" },
   { id: "openai/gpt-5.1-codex-mini", label: "openai/gpt-5.1-codex-mini" },
+  ...FALLBACK_OPENCODE_FREE_MODELS,
 ];
 
 export const agentConfigurationDoc = `# opencode_local agent configuration

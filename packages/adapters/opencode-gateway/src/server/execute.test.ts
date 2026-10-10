@@ -260,6 +260,22 @@ describe("execute", () => {
     expect(result.errorCode).toBe("opencode_gateway_version_unqualified");
   });
 
+  it("connects without a password when allowNoAuth is set", async () => {
+    const server = createFakeServer({
+      version: "v1",
+      versionString: "1.18.35",
+      sessionId: "ses_1",
+      frames: [{ type: "session.idle", properties: { sessionID: "ses_1" } }],
+    });
+    globalThis.fetch = server.fakeFetch;
+
+    const result = await execute(
+      makeContext({ config: { apiBaseUrl: "127.0.0.1", allowNoAuth: true, model: "a/b" } }),
+    );
+    expect(result.exitCode).toBe(0);
+    expect(server.requests).toContain("GET /global/health");
+  });
+
   it("surfaces missing configuration", async () => {
     const missingUrl = await execute(makeContext({ config: { password: "x", model: "a/b" } }));
     expect(missingUrl.errorCode).toBe("opencode_gateway_api_base_url_missing");

@@ -21,6 +21,8 @@ export interface GatewayConfig {
   baseUrl: URL | null;
   username: string;
   password: string | null;
+  /** Operator explicitly opted into a server that runs without basic auth. */
+  allowNoAuth: boolean;
   versionOverride: OpenCodeApiVersion | "auto";
   sessionKeyStrategy: SessionKeyStrategy;
   directory: string | null;
@@ -47,10 +49,29 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+export const DEFAULT_OPENCODE_PORT = "4096";
+
+function parseBooleanLike(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return null;
+}
+
+/**
+ * Accept a full URL, `host:port`, or a bare host/IP. A missing scheme defaults
+ * to `http://`; a missing port defaults to OpenCode's server default (4096).
+ */
 export function normalizeBaseUrl(value: string): URL | null {
+  const input = value.trim();
+  if (!input) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : `http://${input}`;
   try {
-    const url = new URL(value);
+    const url = new URL(withScheme);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (!url.port) url.port = DEFAULT_OPENCODE_PORT;
     url.pathname = url.pathname.replace(/\/+$/, "");
     url.search = "";
     url.hash = "";
@@ -124,6 +145,7 @@ export function parseGatewayConfig(rawConfig: Record<string, unknown>): GatewayC
     baseUrl: apiBaseUrl ? normalizeBaseUrl(apiBaseUrl) : null,
     username: nonEmpty(config.username) ?? DEFAULT_SERVER_USERNAME,
     password: nonEmpty(config.password),
+    allowNoAuth: parseBooleanLike(config.allowNoAuth ?? config.passwordless) === true,
     versionOverride: normalizeApiVersionOverride(config.version),
     sessionKeyStrategy: normalizeSessionKeyStrategy(config.sessionKeyStrategy),
     directory,

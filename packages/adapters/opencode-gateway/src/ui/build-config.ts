@@ -41,6 +41,7 @@ export function buildOpenCodeGatewayConfig(v: CreateConfigValues): Record<string
   if (ac.pollIntervalMs == null) ac.pollIntervalMs = 1000;
   if (ac.permissionMode == null) ac.permissionMode = "accept";
   if (ac.questionPolicy == null) ac.questionPolicy = "reject";
+  if (typeof ac.allowNoAuth !== "boolean") ac.allowNoAuth = false;
   if (!ac.sessionKeyStrategy) ac.sessionKeyStrategy = "issue";
   if (!ac.version) ac.version = "auto";
   if (!ac.username) ac.username = "opencode";

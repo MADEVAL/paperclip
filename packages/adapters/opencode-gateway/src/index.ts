@@ -1,6 +1,7 @@
 import type { AdapterSessionManagement, ServerAdapterModule } from "@paperclipai/adapter-utils";
 import { ADAPTER_LABEL, ADAPTER_TYPE, ALLOW_UNQUALIFIED_VERSION_ENV } from "./shared/constants.js";
 import { execute, getConfigSchema, sessionCodec, testEnvironment } from "./server/index.js";
+import { catalogToAdapterModels, FALLBACK_OPENCODE_MODELS } from "./server/free-models.js";
 
 export { createOpenCodeApiClient, formFieldsToQuestions } from "./server/index.js";
 
@@ -8,13 +9,13 @@ export const type = ADAPTER_TYPE;
 export const label = ADAPTER_LABEL;
 
 /**
- * The gateway owns the provider/model catalog. Paperclip cannot reliably
- * enumerate models from an arbitrary already-running OpenCode server, so the
- * static list stays empty and the operator sets `adapterConfig.model`
- * explicitly. See `listOpenCodeGatewayModels` for the best-effort probe used by
- * other surfaces.
+ * The gateway owns the provider catalog, so Paperclip cannot enumerate the
+ * models of an arbitrary running server. The static list is the offline
+ * fallback of known free OpenCode Zen / Go models; the create form's model
+ * combobox loads the live catalog (see `getConfigSchema`). The operator can
+ * always type any `provider/model`.
  */
-export const models: { id: string; label: string }[] = [];
+export const models: { id: string; label: string }[] = catalogToAdapterModels(FALLBACK_OPENCODE_MODELS);
 
 const sessionManagement: AdapterSessionManagement = {
   supportsSessionResume: true,
@@ -42,13 +43,21 @@ Don't use when:
 - The OpenCode server is only reachable over unsafe public plain HTTP.
 
 Required fields:
-- apiBaseUrl (string): base URL of the running server, for example
-  http://127.0.0.1:4096. Paperclip does not launch this server.
-- password (string): OPENCODE_SERVER_PASSWORD. Sent as HTTP basic auth.
+- apiBaseUrl (string): host, host:port, or full URL of the running server, for
+  example 192.168.1.50, 127.0.0.1:4096, or http://127.0.0.1:4096. A missing port
+  defaults to 4096. Paperclip does not launch this server.
 - model (string): OpenCode model id in provider/model form, for example
-  anthropic/claude-sonnet-4-5. The gateway owns the provider catalog.
+  opencode/big-pickle (free) or anthropic/claude-sonnet-4-5. The gateway owns
+  the provider catalog.
+
+Auth:
+- If the server was started with OPENCODE_SERVER_PASSWORD, set password.
+- If the server runs without auth, set allowNoAuth=true and leave password empty.
+  Only do this on loopback or a trusted private network.
 
 Optional fields:
+- password (string): OPENCODE_SERVER_PASSWORD. Sent as HTTP basic auth.
+- allowNoAuth (boolean): connect to a server that runs without basic auth.
 - username (string): basic-auth username. V1 honours OPENCODE_SERVER_USERNAME;
   V2 hard-codes \`opencode\`. Default: opencode.
 - version (v1 | v2 | auto): server protocol family. Default: auto, detected from
@@ -65,6 +74,12 @@ Optional fields:
 - paperclipApiUrl (string): Paperclip API URL reachable by the gateway host.
 - headers (object or JSON string): extra noncritical headers.
 - dangerouslyAllowInsecureRemoteHttp (boolean): unsafe dev escape hatch.
+
+Models:
+- The model field is a combobox loaded from the public OpenCode Zen and OpenCode
+  Go catalogs (https://opencode.ai/zen/v1/models and .../zen/go/v1/models).
+  Free models are labelled "(free)". Any provider/model can be typed manually.
+  A model works only if the gateway host has that provider connected.
 
 Protocol mapping:
 - V1 (opencode-ai 1.x): GET /global/health, POST /session,

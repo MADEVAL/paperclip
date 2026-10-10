@@ -7,6 +7,7 @@ import {
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import { isValidOpenCodeModelId } from "../index.js";
+import { loadOpenCodeFreeModels, mergeFreeModels } from "./free-models.js";
 
 const MODELS_CACHE_TTL_MS = 60_000;
 const MODELS_DISCOVERY_TIMEOUT_MS = 20_000;
@@ -363,11 +364,11 @@ export async function ensureOpenCodeModelConfiguredAndAvailable(input: {
 }
 
 export async function listOpenCodeModels(): Promise<AdapterModel[]> {
-  try {
-    return await discoverOpenCodeModelsCached();
-  } catch {
-    return [];
-  }
+  const [discovered, freeModels] = await Promise.all([
+    discoverOpenCodeModelsCached().catch(() => [] as AdapterModel[]),
+    loadOpenCodeFreeModels(),
+  ]);
+  return mergeFreeModels(discovered, freeModels);
 }
 
 export function resetOpenCodeModelsCacheForTests() {

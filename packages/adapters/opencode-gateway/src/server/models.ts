@@ -1,5 +1,5 @@
 import type { AdapterModel } from "@paperclipai/adapter-utils";
-import { detectOpenCodeServerInfo, requestJson, type OpenCodeConnection } from "./transport.js";
+import { detectOpenCodeServerInfo, requestJson, buildBasicAuthHeader, type OpenCodeConnection } from "./transport.js";
 import { parseGatewayConfig } from "./config.js";
 import type { OpenCodeApiVersion } from "./protocol.js";
 
@@ -75,10 +75,10 @@ function candidatePaths(apiVersion: OpenCodeApiVersion): string[] {
 
 export async function listOpenCodeGatewayModels(config: Record<string, unknown>): Promise<AdapterModel[]> {
   const cfg = parseGatewayConfig(config);
-  if (!cfg.baseUrl || !cfg.password) return [];
+  if (!cfg.baseUrl || (!cfg.password && !cfg.allowNoAuth)) return [];
   const connection: OpenCodeConnection = {
     baseUrl: cfg.baseUrl,
-    authHeader: `Basic ${Buffer.from(`${cfg.username}:${cfg.password}`, "utf8").toString("base64")}`,
+    authHeader: cfg.password ? buildBasicAuthHeader(cfg.username, cfg.password) : null,
     extraHeaders: cfg.extraHeaders,
     fetchImpl: fetch,
   };

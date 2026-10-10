@@ -5,8 +5,30 @@ import {
   DEFAULT_TIMEOUT_SEC,
   INSECURE_REMOTE_HTTP_ESCAPE_HATCH,
 } from "../shared/constants.js";
+import {
+  buildModelFieldOptions,
+  FALLBACK_OPENCODE_MODELS,
+  loadOpenCodeModelCatalog,
+  type OpenCodeCatalogModel,
+} from "./free-models.js";
 
-export function getConfigSchema(): AdapterConfigSchema {
+export interface ConfigSchemaDeps {
+  /** Override the model-catalog loader (used by tests to avoid network). */
+  loadCatalog?: () => Promise<OpenCodeCatalogModel[]>;
+}
+
+async function resolveCatalog(deps: ConfigSchemaDeps): Promise<OpenCodeCatalogModel[]> {
+  const loader = deps.loadCatalog ?? (() => loadOpenCodeModelCatalog());
+  try {
+    const catalog = await loader();
+    return catalog.length > 0 ? catalog : FALLBACK_OPENCODE_MODELS;
+  } catch {
+    return FALLBACK_OPENCODE_MODELS;
+  }
+}
+
+export async function getConfigSchema(deps: ConfigSchemaDeps = {}): Promise<AdapterConfigSchema> {
+  const modelOptions = buildModelFieldOptions(await resolveCatalog(deps));
   return {
     fields: [
       {
@@ -14,15 +36,21 @@ export function getConfigSchema(): AdapterConfigSchema {
         label: "Server base URL",
         type: "text",
         required: true,
-        hint: "Base URL of an already-running `opencode serve`, such as http://127.0.0.1:4096 or a private HTTPS URL. Paperclip connects to it over HTTP/SSE; it does not launch OpenCode.",
+        hint: "Host, host:port, or full URL of an already-running `opencode serve`, for example 192.168.1.50 or http://127.0.0.1:4096. A missing port defaults to 4096. Paperclip connects over HTTP/SSE; it does not launch OpenCode.",
       },
       {
         key: "password",
         label: "Server password",
         type: "text",
-        required: true,
-        hint: "OPENCODE_SERVER_PASSWORD for the running server. Sent as HTTP basic auth. Stored as a Paperclip secret reference.",
+        hint: "OPENCODE_SERVER_PASSWORD for the running server. Sent as HTTP basic auth. Leave empty and enable 'Connect without a password' when the server has no auth.",
         meta: { secret: true },
+      },
+      {
+        key: "allowNoAuth",
+        label: "Connect without a password",
+        type: "toggle",
+        default: false,
+        hint: "Connect to an OpenCode server that runs without basic auth (no OPENCODE_SERVER_PASSWORD). Only use on loopback or a trusted private network.",
       },
       {
         key: "username",
@@ -52,9 +80,10 @@ export function getConfigSchema(): AdapterConfigSchema {
       {
         key: "model",
         label: "Model",
-        type: "text",
+        type: "combobox",
         required: true,
-        hint: "OpenCode model id in provider/model form, for example anthropic/claude-sonnet-4-5. The gateway owns the provider catalog, so Paperclip cannot validate this.",
+        options: modelOptions,
+        hint: "OpenCode model id in provider/model form. The list is loaded from OpenCode Zen and OpenCode Go; entries ending in (free) cost nothing. You can also type any provider/model.",
       },
       {
         key: "agent",
