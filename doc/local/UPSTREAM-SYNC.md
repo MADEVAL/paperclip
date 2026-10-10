@@ -24,7 +24,46 @@ upstream/master ──► master (только fast-forward, зеркало)
 обновлении upstream они накатываются одной операцией `git rebase`, а не
 прогоняются через десятки конфликтов.
 
-## 2. Установка на свой сервер — ТОЛЬКО из ветки `personal`
+## 2. Раскладка веток и PR
+
+Всего 5 веток: `master`, `personal` и три рабочие (по одной на задачу).
+
+| Ветка | Роль | PR | Что содержит |
+|---|---|---|---|
+| `master` | зеркало `upstream/master` | — | ванильный upstream, ничего своего |
+| `personal` | личный слой (все правки одним коммитом) | — | объединение всего; из неё ставится сервер |
+| `feat/opencode-v2-support` | OpenCode V2 (direct adapter + runner) | **#15715** | adapter V2, runner `OpenCodeApiClient` V1/V2, config reload, MCP, projection, connections, pins/docs |
+| `feat/deepseek-first-class-provider` | DeepSeek как first-class провайдер | **#15585** | shared/server/ui + миграция provider CHECK |
+| `feat/opencode-gateway-canonical` | gateway `opencode_gateway` | — (PR позже) | HTTP/SSE adapter + wizard + registry + no-auth/free-model lists |
+
+Рабочие каталоги (worktrees) — по одному на задачу:
+
+```
+D:/_DEV/_PAPERCLIP/paperclip           [personal]
+D:/_DEV/_PAPERCLIP/paperclip-opencode  [feat/opencode-v2-support]        -> PR #15715
+D:/_DEV/_PAPERCLIP/paperclip-pr15585   [feat/deepseek-first-class-provider] -> PR #15585
+```
+
+Правила:
+- **Одна задача — одна ветка.** Доработки идут коммитами в существующую ветку,
+  новые имена (`-canonical`, `-support`, `-runner-driver`, `-adapter`) не плодятся.
+- **Головы PR не переключать.** PR #15715 привязан к имени
+  `feat/opencode-v2-support`, PR #15585 — к `feat/deepseek-first-class-provider`.
+  Переименование или удаление этих веток закроет PR.
+- **Gateway зависит от V2.** Ветка `feat/opencode-gateway-canonical` построена
+  поверх V2-коммитов, поэтому её будущий PR будет включать и изменения V2, пока
+  #15715 не влит. После мержа V2 сожми ветку до чистого gateway:
+  ```sh
+  git checkout feat/opencode-gateway-canonical
+  git rebase master
+  ```
+
+Историю навели в порядок 2026-10-11: удалены дубликаты
+`feat/opencode-v2-canonical`, `feat/opencode-v2-runner-driver` и
+`feat/opencode-gateway-adapter` (последний был старым снимком всей интеграции).
+Снимки сохранены в тегах `backup/*` (см. раздел 8).
+
+## 3. Установка на свой сервер — ТОЛЬКО из ветки `personal`
 
 Версию Paperclip со своими правками собирают и ставят **из ветки `personal`**.
 `master` — это чистое зеркало `upstream`, свои изменения в нём отсутствуют;
@@ -69,7 +108,7 @@ cd paperclip && pnpm install && pnpm build
 Обновление версии: `git sync` у себя → новый тег `deploy/<дата>` → на сервере
 `paperclipai install --repo MADEVAL/paperclip --ref deploy/<новая-дата>`.
 
-## 3. Ежедневный цикл
+## 4. Ежедневный цикл
 
 Одна команда:
 
@@ -94,7 +133,7 @@ git checkout master && git merge --ff-only upstream/master
 git checkout personal && git rebase master
 ```
 
-## 4. Публикация в форк
+## 5. Публикация в форк
 
 ```sh
 git push --force-with-lease origin master   # зеркало; перезапись ожидаема
@@ -104,7 +143,7 @@ git push origin personal                    # твой слой
 `--force-with-lease` безопаснее `--force`: не перезапишет, если кто-то (или
 другая твоя машина) успел продвинуть `origin/master`.
 
-## 5. Авто-разрешение конфликтов (rerere)
+## 6. Авто-разрешение конфликтов (rerere)
 
 Включено один раз на машину:
 
@@ -117,7 +156,7 @@ git config rerere.autoupdate true
 применяет это автоматически. Это и есть «автонакат»: первый раз разрешаешь
 вручную — дальше происходит само.
 
-## 6. Если возник конфликт при `git sync`
+## 7. Если возник конфликт при `git sync`
 
 1. `git status` покажет конфликтные файлы.
 2. Правь файлы, убирая маркеры `<<<<<<<` / `=======` / `>>>>>>>`.
@@ -140,7 +179,7 @@ pnpm exec drizzle-kit generate     # создаст новую миграцию 
 `packages/db/src/migrations/meta/_journal.json` (имя файла и тег должны
 совпадать), оставь в `meta/` 5 последних snapshot-файлов.
 
-## 7. Откат
+## 8. Откат
 
 Посмотреть бэкапы:
 
@@ -160,17 +199,36 @@ git reset --hard <backup-тег>
 git push --force origin <backup-тег>:master
 ```
 
-Пример: старый master до перестройки — тег `backup/master-pre-upstream-2026-10-10`.
+Восстановить удалённую ветку:
 
-## 8. Частые ситуации
+```sh
+git branch <имя> <backup-тег>          # локально
+git push origin <backup-тег>:refs/heads/<имя>   # обратно на origin
+```
+
+Текущие важные теги:
+
+| Тег | Что хранит |
+|---|---|
+| `backup/master-pre-upstream-2026-10-10` | `master`/`personal` до перестройки (все правки) |
+| `personal-pre-restructure-2026-10-10` | то же (синоним) |
+| `backup/v2-support-2026-10-10` | прежняя вершина V2-PR-ветки |
+| `backup/v2-canonical-2026-10-11` | удалённая `feat/opencode-v2-canonical` |
+| `backup/v2-runner-driver-2026-10-10` | удалённая `feat/opencode-v2-runner-driver` |
+| `backup/gateway-canonical-2026-10-11` | `feat/opencode-gateway-canonical` |
+| `backup/gateway-2026-10-10`, `backup/fork-master-2026-10-10` | старые снимки gateway/форка |
+| `backup/deepseek-2026-10-10` | `feat/deepseek-first-class-provider` |
+| `backup/refresh-lockfile-2026-10-11` | удалённая `chore/refresh-lockfile` |
+
+## 9. Частые ситуации
 
 - **`master` показывает `ahead/behind origin`** — это нормально, если ты обновил
-  зеркало, но ещё не запушил. Отправь зеркало (раздел 4).
+  зеркало, но ещё не запушил. Отправь зеркало (раздел 5).
 - **В `master` «пропали» мои правки** — их там и не должно быть. Они в `personal`
-  (и в тегах/`feat/*`). Переключись: `git checkout personal`.
+  и в трёх рабочих `feat/*`. Переключись: `git checkout personal`.
 - **Никогда не коммить в `master`** — только `git merge --ff-only upstream/master`.
-  Свой код — только в `personal`.
-- **Установка/деплой — только из `personal`** (раздел 2). Из `master` ставится
+  Свой код — только в `personal` или в рабочую `feat/*`.
+- **Установка/деплой — только из `personal`** (раздел 3). Из `master` ставится
   ванильный upstream без твоих правок.
 - **Не редактировать upstream-доки** (`AGENTS.md`, `doc/DEVELOPING.md`,
   `CONTRIBUTING.md`, `.github/*`) без необходимости — это провоцирует конфликты
@@ -180,10 +238,11 @@ git push --force origin <backup-тег>:master
   merge: логический хэш git-blob (LF) совпадает с ожидаемым. POSIX-тесты с
   shebang-скриптами и Rust-сборка на Windows тоже недоступны (нет `link.exe`).
 
-## 9. Быстрая проверка, что всё в порядке
+## 10. Быстрая проверка, что всё в порядке
 
 ```sh
 git merge-base --is-ancestor master personal   # OK => master является базой personal
 git log --oneline master..personal             # должен быть ровно твой слой
 git rebase master                              # сразу после sync: "up to date"
+git branch -vv                                 # ожидаемо: master, personal и 3 feat/*
 ```
