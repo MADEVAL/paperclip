@@ -24,7 +24,52 @@ upstream/master ──► master (только fast-forward, зеркало)
 обновлении upstream они накатываются одной операцией `git rebase`, а не
 прогоняются через десятки конфликтов.
 
-## 2. Ежедневный цикл
+## 2. Установка на свой сервер — ТОЛЬКО из ветки `personal`
+
+Версию Paperclip со своими правками собирают и ставят **из ветки `personal`**.
+`master` — это чистое зеркало `upstream`, свои изменения в нём отсутствуют;
+установка из `master` даст ванильный Paperclip без правок.
+
+Managed install прямо из форка:
+
+```sh
+npx --registry https://registry.npmjs.org paperclipai install \
+  --repo MADEVAL/paperclip \
+  --ref personal
+```
+
+Ветка `personal` перебазируется при каждом `git sync`, поэтому её SHA меняется.
+Для воспроизводимого/зафиксированного деплоя помечай проверенный срез тегом и
+ставь по тегу, а не по «плавающей» ветке:
+
+```sh
+# у себя в форке
+git tag deploy/<дата> personal
+git push origin deploy/<дата>
+
+# на сервере
+paperclipai install --repo MADEVAL/paperclip --ref deploy/<дата>
+```
+
+Docker — образ собирают из чекаута ветки `personal`:
+
+```sh
+git clone --branch personal https://github.com/MADEVAL/paperclip.git
+cd paperclip
+docker build -t paperclip-local .
+```
+
+Из исходников на сервере:
+
+```sh
+git clone --branch personal https://github.com/MADEVAL/paperclip.git
+cd paperclip && pnpm install && pnpm build
+```
+
+Обновление версии: `git sync` у себя → новый тег `deploy/<дата>` → на сервере
+`paperclipai install --repo MADEVAL/paperclip --ref deploy/<новая-дата>`.
+
+## 3. Ежедневный цикл
 
 Одна команда:
 
@@ -49,7 +94,7 @@ git checkout master && git merge --ff-only upstream/master
 git checkout personal && git rebase master
 ```
 
-## 3. Публикация в форк
+## 4. Публикация в форк
 
 ```sh
 git push --force-with-lease origin master   # зеркало; перезапись ожидаема
@@ -59,7 +104,7 @@ git push origin personal                    # твой слой
 `--force-with-lease` безопаснее `--force`: не перезапишет, если кто-то (или
 другая твоя машина) успел продвинуть `origin/master`.
 
-## 4. Авто-разрешение конфликтов (rerere)
+## 5. Авто-разрешение конфликтов (rerere)
 
 Включено один раз на машину:
 
@@ -72,7 +117,7 @@ git config rerere.autoupdate true
 применяет это автоматически. Это и есть «автонакат»: первый раз разрешаешь
 вручную — дальше происходит само.
 
-## 5. Если возник конфликт при `git sync`
+## 6. Если возник конфликт при `git sync`
 
 1. `git status` покажет конфликтные файлы.
 2. Правь файлы, убирая маркеры `<<<<<<<` / `=======` / `>>>>>>>`.
@@ -95,7 +140,7 @@ pnpm exec drizzle-kit generate     # создаст новую миграцию 
 `packages/db/src/migrations/meta/_journal.json` (имя файла и тег должны
 совпадать), оставь в `meta/` 5 последних snapshot-файлов.
 
-## 6. Откат
+## 7. Откат
 
 Посмотреть бэкапы:
 
@@ -117,14 +162,16 @@ git push --force origin <backup-тег>:master
 
 Пример: старый master до перестройки — тег `backup/master-pre-upstream-2026-10-10`.
 
-## 7. Частые ситуации
+## 8. Частые ситуации
 
 - **`master` показывает `ahead/behind origin`** — это нормально, если ты обновил
-  зеркало, но ещё не запушил. Отправь зеркало (раздел 3).
+  зеркало, но ещё не запушил. Отправь зеркало (раздел 4).
 - **В `master` «пропали» мои правки** — их там и не должно быть. Они в `personal`
   (и в тегах/`feat/*`). Переключись: `git checkout personal`.
 - **Никогда не коммить в `master`** — только `git merge --ff-only upstream/master`.
   Свой код — только в `personal`.
+- **Установка/деплой — только из `personal`** (раздел 2). Из `master` ставится
+  ванильный upstream без твоих правок.
 - **Не редактировать upstream-доки** (`AGENTS.md`, `doc/DEVELOPING.md`,
   `CONTRIBUTING.md`, `.github/*`) без необходимости — это провоцирует конфликты
   при `git sync`. Личные заметки держи в `doc/local/`.
@@ -133,7 +180,7 @@ git push --force origin <backup-тег>:master
   merge: логический хэш git-blob (LF) совпадает с ожидаемым. POSIX-тесты с
   shebang-скриптами и Rust-сборка на Windows тоже недоступны (нет `link.exe`).
 
-## 8. Быстрая проверка, что всё в порядке
+## 9. Быстрая проверка, что всё в порядке
 
 ```sh
 git merge-base --is-ancestor master personal   # OK => master является базой personal
