@@ -415,25 +415,60 @@ from event-driven normal paths and route only real deadlines through the interna
 scheduler. Preserve durable delivery, startup recovery, and domain-level claims.
 Longer polling intervals alone do not complete an item.
 
-- [ ] **JOB-01 — Chat reconciliation.** Current: every **1s**, with multiple
-  runtime/delivery/publication lanes and SQL even without connectors. Change:
-  disarm empty lanes and activate on committed events or deadlines. **Complete
-  when:** a tenant with no chat obligations issues no chat SQL and new inbound,
-  publication, and recovery work still runs. Sources:
+- [ ] **JOB-01 — Chat reconciliation.** Partially migrated on 2026-10-10.
+  Inbound deliveries, outbound publications, and Slack upload receipt recovery
+  now use transaction-aware commit wakes and durable retry/claim deadlines.
+  Empty queues disarm after startup. Publication deadlines use the dispatch
+  eligibility predicate so paused endpoints, unknown outcomes, blocked followers,
+  and receipts owned by a live sender do not cause empty scans. Completion wakes
+  refill free endpoint slots without waiting for slow peers. No new tables.
+  Five additional queues now use independent commit/deadline workers:
+  Slack Board messages, slash-command task starts, setup verification messages,
+  receipt reactions, and Slack session stops. Their producers and foreground
+  claim/retry/settlement writes signal inside the owning transaction. The same
+  eligibility predicates drive dispatch and deadline selection. Paused task
+  starts/Board messages and uncertain sends have no recurring deadline.
+  Verification waits for account linking, welcome completion, and a verified
+  callback; those state changes wake it. Failed confirmed task admission saves
+  a retry deadline so its commit cannot cause an immediate retry loop.
+  Startup restores existing rows, and empty workers disarm. No new tables.
+  Tests cover an idle hour, real producer notifications, PostgreSQL deadline
+  selection, stale claims, outer-transaction wakes, and callback-driven setup.
+  Remaining **1s** maintenance: provider runtimes, other provider action
+  outboxes, run milestone/wake-notice projection, GitHub operation recovery,
+  Teams protocol maintenance, and Slack session sync. GitHub pre-ingress recovery
+  must still inspect provider history: a lost callback has no local queue row.
+  This slice does **not** yet make the whole chat subsystem quiet. Independent
+  DB roots/direct SQL require startup recovery, as with the other migrated queues.
+  **Complete when:** all remaining lanes are demand/deadline-driven and a tenant
+  with no chat obligations issues no chat SQL. Sources:
   [app.ts](../../server/src/app.ts),
+  [chat-delivery-work.ts](../../server/src/services/chat-delivery-work.ts),
   [chat-channels.ts](../../server/src/services/chat-channels.ts).
 
-- [ ] **JOB-02 — Email reconciliation.** Current: every **1s**, querying active
-  endpoints even when none exist. Change: initialize resource/pending state and
-  update on endpoint changes, webhook receipt, sends, and retries. **Complete
-  when:** empty mail state produces no polling SQL and new work activates the
-  worker without restart. Source:
+- [x] **JOB-02 — Email reconciliation.** Replaced the unconditional **1s**
+  scan with startup recovery and transaction-aware wakes for endpoint activation,
+  pause/resume/removal, admitted events, and queued sends. Separate service
+  objects sharing the database owner wake the app worker after commit. The
+  worker restores its next deadline from persisted inbound/outbound retries and
+  catch-up state. No active inboxes means no recurring email SQL or timer.
+  Configured inboxes retain one-minute catch-up and live socket lease renewal
+  (NET-01/NET-02); this does not yet make an active inbox sleep indefinitely.
+  Intent reconciliation survives ambiguous transaction outcomes. Warm standby
+  suppresses SQL, and idle drain defers dispatch without losing its wake.
+  No new tables or provider infrastructure. Independent database roots and
+  direct SQL do not emit these process-local hints; startup and configured-inbox
+  catch-up remain the recovery boundaries. Source:
   [email-channels.ts](../../server/src/services/email-channels.ts).
 
-- [ ] **JOB-03 — Browser-use cleanup.** Current: every **3s** with due-session
-  queries even when empty. Change: register actual session reconciliation/expiry
-  deadlines. **Complete when:** no sessions means no queries, while active leases,
-  expiry, and failed cleanup remain recoverable. Sources:
+- [x] **JOB-03 — Browser-use cleanup.** Replaced the empty **3s** scan with
+  transaction-aware session signals and deadlines from existing `nextPollAt` and
+  `leaseUntil` columns. Startup restores unfinished work; no live sessions means
+  no recurring browser SQL or timer. Active and idle sessions retain provider
+  polling, expiry checks, lease renewal, and cleanup retries. Credential-removal
+  sweeps signal lease release so background cleanup resumes promptly. Standby
+  suppresses SQL; idle drain defers dispatch with a memory-only wake. No new
+  tables. Independent DB roots/direct SQL require restart recovery. Sources:
   [app.ts](../../server/src/app.ts),
   [browser-use.ts](../../server/src/services/browser-use.ts).
 

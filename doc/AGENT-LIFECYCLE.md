@@ -54,6 +54,19 @@ An old result cannot complete a newer operation.
 Deletion requires completed termination or a rejected hire.
 The existing restrictions for built-in agents and accounting still apply.
 
+Messages accepted during setup remain queued until verification completes.
+After the worker commits `ready`, its driver immediately asks the scheduler to
+dispatch that agent's saved work. The scheduler rechecks company scope,
+invokability, budgets, concurrency, and task ownership through normal admission.
+If dispatch fails, readiness remains committed and the periodic queue sweep
+retries; setup is not repeated because of a scheduler failure.
+
+Native OpenCode verification checks the selected model with the real hello
+probe. It validates the model identifier but does not first enumerate the full model
+catalog. Authentication failures, unavailable models, and probe timeouts still
+prevent readiness. Without an explicit local working directory, the native
+probe uses a temporary empty directory instead of the server's checkout.
+
 ## Commands and transactions
 
 `requestHire` writes the agent record before preparation starts.
@@ -156,7 +169,12 @@ It shows `paused` during preparation, verification, pause, and resume.
 It shows `terminated` as soon as termination starts.
 Execution code can change this field only when the lifecycle is `ready`.
 Use `lifecycleState` to distinguish the steps.
-This change does not change the user interface.
+The agent page shows preparation, verification, pause, resume, and cleanup
+progress from `lifecycleState`. Failed steps show the host error and a Retry
+action. The page refreshes pending steps every two seconds and other states
+every thirty seconds. The lifecycle query does not replace the agent record in
+editable forms, so background updates preserve unsaved settings. It does not
+query plugins for a separate readiness state.
 
 ## Required plugin work
 

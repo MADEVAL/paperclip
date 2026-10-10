@@ -19,6 +19,8 @@ import { getCACertificates } from "node:tls";
 import { pipeline } from "node:stream/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { parseOpenCodeReasoningMode, type OpenCodeReasoningMode } from "./reasoning-mode.js";
+
 import {
   CODEX_SKILLLESS_BASE_INSTRUCTIONS,
   createCodexTaskEnvelope,
@@ -199,6 +201,7 @@ export interface OpenCodeServerDriverOptions {
   commandLifecycle?: {
     beforeSpawn(): void;
     afterSpawn(): void;
+    afterExit?(): void;
   };
   runtimeDirectory: string;
   systemInstructions?: string;
@@ -513,6 +516,7 @@ class OpenCodeHarnessSession implements HarnessSession {
     Array<Record<string, unknown>>
   >();
   readonly #partText = new Map<string, string>();
+  readonly #streamingParts = new Map<string, Record<string, unknown>>();
   readonly #completedTextPartIds = new Set<string>();
   readonly #completedReasoningPartIds = new Set<string>();
   readonly #completedTextParts: Array<{
@@ -674,12 +678,22 @@ class OpenCodeHarnessSession implements HarnessSession {
       .finally(() => this.#pumpEvents());
   }
 
+  supportsTurnReasoning(): boolean {
+    return this.#model.startsWith("openrouter/");
+  }
+
   async startTurn(input: {
     message: NativeUserMessage;
+    reasoningMode?: OpenCodeReasoningMode;
   }): Promise<{ turnId: string }> {
     if (this.#activeTurnId !== null)
       throw new Error("OpenCode session already has an active turn");
+    const reasoningMode = parseOpenCodeReasoningMode(input.reasoningMode);
+    if (input.reasoningMode !== undefined && !this.#model.startsWith("openrouter/")) {
+      throw new Error("Per-turn OpenCode reasoning is supported only for OpenRouter models");
+    }
     const turnId = `turn-${randomBytes(12).toString("hex")}`;
+    this.#streamingParts.clear();
     this.#activeTurnId = turnId;
     this.#emit("turn.submitted", {
       envelopeSchema: this.#taskEnvelope.schema,
@@ -689,12 +703,9 @@ class OpenCodeHarnessSession implements HarnessSession {
     this.#emit("turn.started", { status: "inProgress" }, { turnId });
     const [providerID, ...modelParts] = this.#model.split("/");
     const modelID = modelParts.join("/");
-    // A resumed OpenCode provider session already retains the original system
-    // instructions and task envelope in its conversation. Repeating both on
-    // every Paperclip continuation can overflow smaller context windows and
-    // OpenCode then completes with `finish: unknown` and zero tokens. The
-    // native model envelope still carries the authoritative wake delta,
-    // interaction responses, completion contract, and current issue context.
+    // Keep the task envelope only on the initial task-mode wake. OpenCode
+    // rebuilds system instructions from the latest user message, so system
+    // instructions must still accompany every prompt (including recovery).
     const prompt = this.#sendFullContext
       ? JSON.stringify({
           task: this.#taskEnvelope,
@@ -706,13 +717,15 @@ class OpenCodeHarnessSession implements HarnessSession {
       providerID,
       modelID,
       prompt,
-      // A resumed OpenCode provider session already retains the original system
-      // instructions and task envelope in its conversation. Repeating both on
-      // every Paperclip continuation can overflow smaller context windows and
-      // OpenCode then completes with `finish: unknown` and zero tokens. V2
-      // receives the instructions through the selected agent instead, so its
-      // client ignores this field.
-      ...(this.#sendFullContext ? { system: this.#systemInstructions } : {}),
+      // OpenCode rebuilds its system instructions from the latest user message,
+      // so the instructions must accompany every prompt, including recovery.
+      // V2 carries them on the selected agent, so its client ignores this field.
+      system: this.#systemInstructions,
+      // V1 selects reasoning through the model variant; V2 carries it on the
+      // selected agent, so its client ignores this field.
+      ...(providerID === "openrouter"
+        ? { variant: reasoningMode === "disabled" ? "paperclip-no-reasoning" : "paperclip-default" }
+        : {}),
     });
     this.#sendFullContext = false;
     return { turnId };
@@ -1460,9 +1473,11 @@ class OpenCodeHarnessSession implements HarnessSession {
     const event = record(value);
     const properties = record(event.properties);
     const type = text(event.type);
-    const eventId = text(event.id, canonicalJson(value));
-    if (this.#seenProviderEvents.has(eventId)) return;
-    this.#seenProviderEvents.add(eventId);
+    // Id-less deltas are additive: two identical chunks can be legitimate
+    // adjacent tokens. Content deduplication would silently lose the second.
+    const eventId = text(event.id) || (type === "message.part.delta" ? null : canonicalJson(value));
+    if (eventId !== null && this.#seenProviderEvents.has(eventId)) return;
+    if (eventId !== null) this.#seenProviderEvents.add(eventId);
     if (this.#seenProviderEvents.size > 10_000)
       this.#seenProviderEvents.delete(
         this.#seenProviderEvents.values().next().value!,
@@ -1555,8 +1570,16 @@ class OpenCodeHarnessSession implements HarnessSession {
       );
       return;
     }
-    if (type === "message.part.updated") {
-      const part = record(properties.part);
+    if (type === "message.part.updated" || type === "message.part.delta") {
+      let part = record(properties.part);
+      if (type === "message.part.delta") {
+        const previous = this.#streamingParts.get(text(properties.partID));
+        // A delta has no role or part type. Only stream text for an observed
+        // part with matching message identity; never infer assistant identity.
+        if (!previous || properties.field !== "text" || typeof properties.delta !== "string"
+          || text(previous.messageID, text(previous.messageId)) !== text(properties.messageID)) return;
+        part = { ...previous, text: text(previous.text) + properties.delta };
+      }
       const messageId = text(part.messageID, text(part.messageId));
       if (!messageId) return;
       // Resolve the turn this message actually belongs to, not whichever
@@ -1564,11 +1587,20 @@ class OpenCodeHarnessSession implements HarnessSession {
       // must stay attributed to the turn that created that message.
       const owningTurnId = this.#messageTurnIds.get(messageId) ?? turnId;
       if (!owningTurnId) return;
+      if (owningTurnId === turnId && text(part.id) && ["text", "reasoning"].includes(text(part.type))) {
+        this.#streamingParts.set(text(part.id), part);
+      }
       const role = this.#messageRoles.get(messageId);
       if (role === "assistant") this.#emitAssistantPart(part, owningTurnId);
       else if (role === undefined) {
         const pending = this.#pendingMessageParts.get(messageId) ?? [];
-        if (pending.length < 100) pending.push(part);
+        // Text deltas are cumulative by this point. Keep the newest snapshot
+        // (including completion metadata), not the first 100 token chunks.
+        const previousIndex = ["text", "reasoning"].includes(text(part.type)) && text(part.id)
+          ? pending.findIndex(candidate => candidate.id === part.id && candidate.type === part.type)
+          : -1;
+        if (previousIndex >= 0) pending[previousIndex] = part;
+        else if (pending.length < 100) pending.push(part);
         this.#pendingMessageParts.set(messageId, pending);
       }
       return;
@@ -2223,6 +2255,16 @@ async function startRuntime(input: {
     input.trace?.addSensitiveValues([providerProxy.token]);
   }
   let child: ChildProcess | undefined;
+  let launchPrepared = false;
+  const releaseExecutable = () => {
+    if (!launchPrepared) return;
+    launchPrepared = false;
+    try {
+      input.options.commandLifecycle?.afterExit?.();
+    } catch (error) {
+      input.options.onDiagnostic?.(redact(`OpenCode executable cleanup failed: ${String(error)}`, sensitiveValues));
+    }
+  };
   const configPath = join(configHome, "opencode", "opencode.json");
   const configInput = {
     options: input.options,
@@ -2250,6 +2292,11 @@ async function startRuntime(input: {
         XDG_DATA_HOME: dataHome,
         XDG_CACHE_HOME: cacheHome,
         OPENCODE_DISABLE_PROJECT_CONFIG: "true",
+        // The runner pins the executable, model and assigned MCP tools. A
+        // fresh isolated cache must not fetch a catalog or install unrelated
+        // default plugins before it can submit the first prompt.
+        OPENCODE_DISABLE_MODELS_FETCH: "true",
+        OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
         OPENCODE_SERVER_USERNAME: username,
         OPENCODE_SERVER_PASSWORD: password,
         ...(providerProxy ? { NO_PROXY: [input.options.environment?.no_proxy ?? input.options.environment?.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") } : {}),
@@ -2262,6 +2309,7 @@ async function startRuntime(input: {
       stdio[input.options.commandFd] = input.options.commandFd;
     }
     input.options.commandLifecycle?.beforeSpawn();
+    launchPrepared = true;
     child = spawn(
       input.options.command ?? resolvePinnedOpenCodeCommand(),
       ["serve", "--hostname", "127.0.0.1", "--port", String(port)],
@@ -2272,6 +2320,7 @@ async function startRuntime(input: {
         detached: globalThis.process.platform !== "win32" && isolateProcessGroup,
       },
     );
+    child.once("exit", releaseExecutable);
     if (child.pid !== undefined) {
       try {
         input.options.commandLifecycle?.afterSpawn();
@@ -2498,6 +2547,7 @@ async function startRuntime(input: {
           } catch {
             providerChild.kill("SIGKILL");
           }
+          await waitForExit(providerChild, 2_000);
         }
         await rm(join(configHome, "opencode", "opencode.json"), {
           force: true,
@@ -2514,6 +2564,8 @@ async function startRuntime(input: {
     await providerProxy?.close();
     await bridge.close().catch(() => {});
     child?.kill("SIGKILL");
+    if (child?.pid) await waitForExit(child, 2_000);
+    if (!child?.pid || child.exitCode !== null || child.signalCode !== null) releaseExecutable();
     await rm(join(configHome, "opencode", "opencode.json"), {
       force: true,
     }).catch(() => undefined);
@@ -2908,6 +2960,7 @@ function buildOpenCodeConfig(input: {
     model: input.options.model,
     small_model: input.options.model,
     share: "disabled",
+    autoupdate: false,
     instructions: [],
     plugin: [],
     provider: {
@@ -2923,7 +2976,15 @@ function buildOpenCodeConfig(input: {
             }
           : {}),
         models: {
-          [input.providerModelId]: { name: input.providerModelId },
+          [input.providerModelId]: {
+            name: input.providerModelId,
+            ...(input.modelProvider === "openrouter"
+              ? { variants: {
+                  "paperclip-default": {},
+                  "paperclip-no-reasoning": { reasoning: { enabled: false } },
+                } }
+              : {}),
+          },
         },
       },
     },

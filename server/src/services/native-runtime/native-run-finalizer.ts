@@ -2,7 +2,7 @@ import { eligibleIssueMonitorWait } from "../issue-monitors.js";
 import { isNativePlanWaitResult, readNativePlanWait } from "./native-plan-wait.js";
 import { activeIssueInteractionCondition } from "../issue-question-context.js";
 import { hasPendingNativeChildCompletion } from "./native-child-completion-delivery.js";
-import { settleSlackConversation } from "../slack-conversation-lifecycle.js";
+import { settleExternalConversation } from "../slack-conversation-lifecycle.js";
 import { executionFailureRetryCount } from "../execution-recovery-attempt.js";
 import { readPersistedNativeProviderFailure } from "./native-provider-failure-evidence.js";
 import { dismissAutomaticCompletionReviews } from "./automatic-completion-reviews.js";
@@ -607,7 +607,10 @@ async function resolveCommittedFinalizationRecovery(db: Db, run: typeof heartbea
     eq(issueRecoveryActions.companyId, run.companyId), eq(issueRecoveryActions.sourceIssueId, issueId),
     eq(issueRecoveryActions.kind, "active_run_watchdog"), inArray(issueRecoveryActions.status, ["active", "escalated"]),
     sql`${issueRecoveryActions.evidence}->>'runId' = ${run.id}`,
-    sql`${issueRecoveryActions.wakePolicy}->>'kind' = 'resume_native_run'`,
+    or(
+      sql`${issueRecoveryActions.wakePolicy}->>'kind' = 'resume_native_run'`,
+      eq(issueRecoveryActions.cause, "native_workspace_finalization_owner_unverified"),
+    ),
   ));
   for (const action of actions) await issueRecoveryActionService(db).resolveActiveForIssue({
     companyId: run.companyId, sourceIssueId: issueId, actionId: action.id,
@@ -1176,7 +1179,7 @@ export async function finalizeNativeRun(input: {
         runId: run.id,
       });
     if (input.projectRunStatus) {
-      await settleSlackConversation(input.db, run.companyId, coordinator.issueId).catch((err) => {
+      await settleExternalConversation(input.db, run.companyId, coordinator.issueId).catch((err) => {
         logger.warn({ err, runId: run.id }, "Slack conversation settlement deferred to reconciliation");
       });
     }
@@ -1581,7 +1584,7 @@ export async function finalizeNativeRun(input: {
           runId: run.id,
         });
       if (input.projectRunStatus && finalizationPhase === "committed") {
-        await settleSlackConversation(input.db, run.companyId, coordinator.issueId).catch((err) => {
+        await settleExternalConversation(input.db, run.companyId, coordinator.issueId).catch((err) => {
           logger.warn({ err, runId: run.id }, "Slack conversation settlement deferred to reconciliation");
         });
       }

@@ -21,7 +21,7 @@ import {
   adapterExecutionTargetEnablesSandboxDuplexBridge,
   readAdapterExecutionTarget,
   readAdapterExecutionTargetHomeDir,
-  resolveAdapterExecutionTargetTimeoutSec,
+  resolveAdapterExecutionTargetTimeout,
   resolveAdapterExecutionTargetCommandForLogs,
   runAdapterExecutionTargetProcess,
   runAdapterExecutionTargetShellCommand,
@@ -359,16 +359,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ),
     );
   try {
-    const timeoutSec = resolveAdapterExecutionTargetTimeoutSec(
+    const adapterExecutionTimeout = resolveAdapterExecutionTargetTimeout(
       executionTarget,
       asNumber(config.timeoutSec, 0),
     );
+    const timeoutSec = adapterExecutionTimeout.timeoutSec;
     const graceSec = asNumber(config.graceSec, 20);
     await ensureAdapterExecutionTargetRuntimeCommandInstalled({
       runId,
       target: executionTarget,
       installCommand: ctx.runtimeCommandSpec?.installCommand,
-    detectCommand: ctx.runtimeCommandSpec?.detectCommand,
+      detectCommand: ctx.runtimeCommandSpec?.detectCommand,
       cwd,
       env: buildRuntimeEnv(),
       timeoutSec,
@@ -691,6 +692,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       if (modelArg) args.push("--model", modelArg);
       if (!openCodeV2 && variant) args.push("--variant", variant);
       if (autoApprovePermissions) args.push("--auto");
+      // OpenCode prefers the inherited PWD over process.cwd(). Use the realized
+      // workspace unless the operator already selected a directory explicitly.
+      const optionTerminator = extraArgs.indexOf("--");
+      const extraOptionArgs = optionTerminator === -1 ? extraArgs : extraArgs.slice(0, optionTerminator);
+      if (!extraOptionArgs.some((arg) => arg === "--dir" || arg.startsWith("--dir="))) {
+        args.push("--dir", effectiveExecutionCwd);
+      }
       if (extraArgs.length > 0) args.push(...extraArgs);
       return args;
     };
@@ -842,7 +850,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           billingType: "unknown",
           costUsd: attempt.parsed.costUsd,
           costStatus: attempt.parsed.usageComplete || attempt.parsed.costUsd != null ? undefined : "unpriced",
-          errorMessage: `Timed out after ${timeoutSec}s`,
+          // A provider or output-observation timeout can arrive before the
+          // configured execution deadline. The boolean does not prove which
+          // timer fired, and provider stderr is not safe exception text.
+          errorMessage: "OpenCode execution timed out",
+          resultJson: { adapterExecutionTimeout },
           clearSession: clearSessionOnMissingSession,
         };
       }
@@ -929,6 +941,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         costUsd: attempt.parsed.costUsd,
         costStatus: attempt.parsed.usageComplete || attempt.parsed.costUsd != null ? undefined : "unpriced",
         resultJson: {
+          adapterExecutionTimeout,
           stdout: attempt.proc.stdout,
           stderr: attempt.proc.stderr,
         },

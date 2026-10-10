@@ -1,3 +1,18 @@
+import { prepareHeartbeatWorkspace } from "./heartbeat/workspace-preparation.js";
+import { executeHeartbeatRuntime, NativeSessionResumeScheduledError, NativeWorkspaceFinalizeScheduledError } from "./heartbeat/runtime-execution.js";
+import { selectHeartbeatRuntime } from "./heartbeat/runtime-selection.js";
+import { createHeartbeatRunCompletion } from "./heartbeat/run-completion.js";
+export {
+  MAX_TURN_CONTINUATION_WAKE_REASON,
+  parseSandboxProviderPluginNotReadyFailureMessage,
+  isConfigurationIncompleteFailedRun,
+  isWorkspaceSyncConflictFailure,
+} from "./heartbeat/run-completion.js";
+import {
+  createHeartbeatScheduling,
+  formatIssueIdentifierLink,
+} from "./heartbeat/scheduling.js";
+import { FAST_RESPONSE_AGENT_GUIDANCE, fastResponseHistoryBody } from "@paperclipai/shared";
 import { agentExecutionsHaveStopped } from "./agent-execution-stop.js";
 import {
   cancelHeartbeatNativeRun,
@@ -12,7 +27,6 @@ export {
   cancelHeartbeatNativeRun,
 } from "./heartbeat/run-control.js";
 import {
-  NON_RETRYABLE_PREFLIGHT_FAILURE_CODES,
   isHeartbeatRunTerminalStatus,
   isHeartbeatRunRuntimeStatusActive,
   publishHeartbeatRunRuntimeProgress,
@@ -26,7 +40,6 @@ export {
   resolveSkillTestRunCompletionForHeartbeatOutcome,
 } from "./heartbeat/run-lifecycle.js";
 import {
-  ChatControlRecoveryUnresolvedError,
   shouldDeferFollowupWakeForSameIssue,
   shouldQueueFollowupForRunningIssueWake,
   DEFERRED_WAKE_CONTEXT_KEY,
@@ -43,10 +56,7 @@ import {
 import {
   BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS,
   WorkspaceBusyDeferral,
-  readTransientRecoveryContractFromRun,
-  readHeartbeatRunErrorFamily,
   isWorkspaceBusyDeferral,
-  isTransientWorkspaceGitScanCode,
   createHeartbeatRetries,
 } from "./heartbeat/retries.js";
 export {
@@ -62,7 +72,6 @@ export {
   computeBoundedTransientHeartbeatRetrySchedule,
 } from "./heartbeat/retries.js";
 import {
-  type RunSessionOutcome,
   EXECUTION_REVIEW_PARTICIPANT_RECOVERY_WAKE_REASON,
   deriveTaskKeyWithHeartbeatFallback,
   getAdapterSessionCodec,
@@ -75,11 +84,8 @@ import {
   isCanonicalSessionIdForAdapter,
   requiresCanonicalSessionIds,
   resolveNextSessionState,
-  normalizeUsageTotals,
   resolveCacheAdjustedCostUsd,
-  resolveLedgerBiller,
   resolveLedgerCostStatus,
-  normalizeLedgerBillingType,
   createHeartbeatRunState,
 } from "./heartbeat/run-state.js";
 export {
@@ -98,9 +104,8 @@ export {
   normalizeSessionParams,
   resolveNextSessionState,
 } from "./heartbeat/run-state.js";
-import { readGitConnectionFailure } from "./git-connection-failure.js";
+
 import {
-  CONFIGURATION_INCOMPLETE_FAILURE_CODE,
   ConfigurationIncompleteFailure,
   deriveTaskKey,
   type WakeupOptions,
@@ -117,12 +122,6 @@ import {
   applyRunScopedMentionedSkillKeys,
   MANAGED_GITHUB_TOKEN_KEYS,
   configuredPaperclipApiBaseUrl,
-  buildPaperclipRuntimeMcpServers,
-  createAdapterRuntimeToolAccess,
-  paperclipApiBaseUrl,
-  createAdapterRuntimeMcpAccess,
-  createManagedMcpRunConfig,
-  revokeHeartbeatRunGatewayTokens,
   createHeartbeatRunPreparation,
 } from "./heartbeat/run-preparation.js";
 export {
@@ -139,7 +138,6 @@ export {
   buildPaperclipWakePayload,
 } from "./heartbeat/run-preparation.js";
 import {
-  isWorkspaceValidationFailedRun,
   resolveNativeRecoveryExecutionWorkspaceBinding,
   resolveExecutionWorkspaceReuseRequestForIssue,
   buildExecutionWorkspaceConfigSnapshot,
@@ -149,26 +147,10 @@ import {
   readConfiguredModelFromAdapterConfig,
   resolveTaskSessionConfigFreshness,
   stripPaperclipSessionMetadataFromSessionParams,
-  resolveWorkspaceAfterLowTrustPreflight,
-  WorkspaceValidationFailure,
-  stripHostWorkspaceProvisionForLowTrustSandbox,
-  assertGitWorktreeBaseWorkspaceReady,
-  buildEffectiveRunWorkspaceConfigMetadata,
-  resolveExecutionWorkspaceConfigFreshness,
-  resolveExecutionWorkspaceReuseProvisioningPolicy,
-  provisionExecutionWorkspaceForFreshnessDecision,
-  mergeExecutionWorkspaceMetadataForPersistence,
-  resolveExecutionWorkspaceBranchOwnership,
-  reconcileReusedExecutionWorkspaceProjectWorkspaceId,
-  recordWorkspaceConfigFreshnessOperation,
-  prepareProjectRepositoryWorkspaces,
   resolveRuntimeSessionParamsForWorkspace,
   buildRunWorkspaceHints,
   buildReferencedProjectRunObservability,
   assertGitSensitiveAdapterWorkspaceValid,
-  isWorkspaceValidationFailure,
-  fingerprintFinalizeWorkspaceBranchValidation,
-  attachPaperclipSessionMetadataToSessionParams,
   type EffectiveRunSessionConfigMetadata,
   createHeartbeatWorkspaceResolver,
 } from "./heartbeat/workspaces.js";
@@ -242,23 +224,14 @@ export {
 } from "./heartbeat/run-log.js";
 import { buildPaperclipTaskMarkdown } from "./heartbeat/task-markdown.js";
 export { buildPaperclipTaskMarkdown } from "./heartbeat/task-markdown.js";
-import { preserveWorkspaceRestoreRecoveryMetadataSql } from "./legacy-workspace-restore-recovery.js";
 
-import { recordLegacyWorkspaceRestoreFailure } from "./legacy-execution-recovery.js";
-import {
-  configuredEnvironmentProjection,
-} from "../vendor/paperclip-runner/index.js";
 import { decisionModelService } from "./decision-models.js";
 import { TASK_QUESTION_GUIDANCE } from "./issue-question-context.js";
 import { createAgentIdentityRedactor } from "./agent-identity-redaction.js";
 import { agentIdentityService, supportsManagedAgentIdentity } from "./agent-identity.js";
-import { buildAgentIdentityEnv } from "@paperclipai/adapter-utils/server-utils";
 
 import { prepareConnectionInstructionDelivery } from "./connection-instructions.js";
 import { resolveAssignedConnectionInstructionsForRun } from "./native-runtime/assigned-mcp-tools.js";
-import { externalObjectService } from "./external-objects.js";
-import { resolvePaperclipInstanceRoot } from "../home-paths.js";
-import { dotRunnerBroker } from "./dot-runner-broker.js";
 
 import {
   startupCancellationFence,
@@ -270,28 +243,18 @@ import {
 import { AgentDirectoryReuseInvalidatedError, isAgentDirectoryCopy } from "./agent-directory-working-copies.js";
 
 import type { PaperclipTurnContext } from "@paperclipai/adapter-utils/server-utils";
-import { restoreNativeWorkspaceBestEffort } from "./native-runtime/native-workspace-best-effort.js";
 
 import {
-  cancellationResultJson,
-  readRunCancellation,
-} from "./run-cancellation.js";
-import {
-  withNativeWorkspaceFinalizationOwnership,
   NativeWorkspaceFinalizationBusyError,
   NativeWorkspaceFinalizationOwnershipLostError,
-  type NativeWorkspaceFinalizationOwnership,
 } from "./native-runtime/native-workspace-finalization-ownership.js";
 
 import { reserveRunBudget } from "./budget-reservations.js";
 import { accountRunCost, createCostAccountingReconciler } from "./run-cost-accounting.js";
-import { createRunUsageRecorder } from "./usage-receipts.js";
-import { applyWorkspaceRestoreFailure } from "@paperclipai/adapter-utils/workspace-restore-result";
-import {
-  hasWorkspaceRestoreFailure,
-} from "@paperclipai/shared";
 
 import { toolActionDeliveryService } from "./tool-action-delivery.js";
+import { liveVoiceExecutionGuidance } from "./voice/voice-execution-guidance.js";
+import { githubBotConnectionIdsForRun } from "./chat-github-tools.js";
 
 import {
   isConversation,
@@ -306,13 +269,9 @@ import {
 
 import {
   legacyControllerBootId,
-  renewLegacyControllerLease,
   watchLegacyControllerLease,
 } from "./legacy-controller-lease.js";
 
-import {
-  remoteExecutionHasStopped,
-} from "./remote-execution-termination.js";
 import { applyConnectorSkills, prepareConnectorSkillDelivery, resolveConnectorAssignments } from "./connector-runtime.js";
 
 import { connectionIntentService } from "./connection-intents.js";
@@ -333,26 +292,18 @@ import {
   claimedAdapterType,
 } from "./conversation-continuation.js";
 
-import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./native-runtime/native-review-participant.js";
-
-import { buildNativeReviewRequest } from "./native-runtime/native-review-prompt.js";
 import {
-  legacyExecutionNeedsReconciliationWithEvidence,
   settleInterruptedNativeBootstrap,
-  terminalizeLegacyExecution,
 } from "./legacy-execution-recovery.js";
 import {
   adapterExecutionControls,
   createAdapterExecutionControl,
-  registerAdapterExecutionControl,
 } from "./adapter-execution-control.js";
 import { executionFailureRetryCount } from "./execution-recovery-attempt.js";
 import { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-payload.js";
 export { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-payload.js";
 import { buildExecutionContinuation, StaleExecutionContinuationError } from "./execution-continuation.js";
 import { renderPaperclipWakePrompt } from "@paperclipai/adapter-utils/server-utils";
-
-import { isWorkspaceGitScanError } from "./workspace-git-operation-scheduler.js";
 
 import {
   initializeRunIdentity,
@@ -367,26 +318,21 @@ import {
   startAdapterExecutionTargetPaperclipBridge,
 } from "@paperclipai/adapter-utils/execution-target";
 import { agentInstructionWorkingCopyService, collectStoppedInstructionCopyWithRetries, instructionWorkingCopyGuidance } from "./agent-instruction-working-copies.js";
-import {
-  resolveManagedOpenAiBilling,
-} from "@paperclipai/adapter-utils";
+
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+} from "node:crypto";
 import {
   and,
-  asc,
   desc,
   eq,
   exists,
-  getTableColumns,
-  gte,
   inArray,
   isNull,
-  lt,
-  lte,
   notInArray,
   or,
   sql,
@@ -395,23 +341,13 @@ import type { Db } from "@paperclipai/db";
 import {
   CHAT_PROVIDERS,
   ISSUE_DISPOSITION_REPAIR_RETRY_REASON,
-  PROVIDER_QUOTA_MONITOR_SERVICE_NAME,
   isEnvironmentDriverSupportedForAdapter,
-  type ExecutionWorkspace,
-  type IssueExecutionMonitorClearReason,
-  type IssueExecutionMonitorPolicy,
-  type IssueExecutionMonitorRecoveryPolicy,
 } from "@paperclipai/shared";
 import {
   agents,
   agentConfigRevisions,
-  agentSessionGoalActions,
-  agentTaskSessions,
   agentWakeupRequests,
   chatActions,
-  companies,
-  completionContracts,
-  heartbeatRunEvents,
   heartbeatRuns,
   environmentLeases,
   issueComments,
@@ -419,18 +355,11 @@ import {
   nativeRunFinalizations,
   projects,
   projectWorkspaces,
-  workspaceOperations,
 } from "@paperclipai/db";
-import { conflict, HttpError, notFound } from "../errors.js";
-import {
-  getStartupTraceContext,
-  getStartupTracer,
-} from "../instrumentation.js";
-import { createHostDuplexObservabilityRecorder } from "./duplex-observability-recorder.js";
-import { incrementToolRuntimeMetricCounter } from "./tool-runtime-metrics.js";
+import { HttpError, notFound } from "../errors.js";
+
 import { logger } from "../middleware/logger.js";
 import {
-  createGitRemoteAuthProvider,
   resolveManagedGitHubIdentitySelection,
   scrubGitCredentialText,
 } from "./git-credentials.js";
@@ -442,87 +371,51 @@ import { publishLiveEvent } from "./live-events.js";
 import {
   queuedCommentIdsFromRunContext,
 } from "./issue-queued-comment-queue.js";
-import { documentService } from "./documents.js";
+
 import { getTaskPlanContext } from "./task-plan-context.js";
-import { managedAgentProfileService } from "./managed-agent-profiles.js";
-import { remoteAgentProfileService } from "./remote-agent-profiles.js";
+
 import {
-  buildNativeProviderEnvironment,
-  buildNativeExecutionInput,
-  buildNativeExecutionWithCheckpoint,
-  buildNativeRuntimeContext,
   claimWarmNativeInstructionCopy,
   nativeSessionWorkspaceScope,
   reserveWarmNativeInstructionDirectory,
   dispatchNativeSessionResumptions,
-  ensureNativeCompletionContract,
-  executePaperclipNativeSession,
-  finalizeNativeRun,
-  findNativeSessionResumeRun,
-  isNativeSessionId,
-  isUnusedNativeSessionBootstrap,
-  isUnusedLegacyNativeRetryReplacement,
-  isRunnerIngressAuthorized,
-  materializeLegacyQuestionResponseWakeProjection,
-  materializeNativeInteractionResponses,
-  nativeCompletionRequestsWithSources,
-  nativeCompletionSource,
-  nativeImmediateObjectiveSource,
   NativeCancellationPendingRecoveryError,
   NativeControllerDetachedForRestartError,
-  nativeToolContractFingerprintForTarget,
-  prepareNativeSessionBootstrapPersistence,
   prepareNativeWorkspaceSync,
-  readNativeWorkspaceSyncReference,
-  recordNativeFinalizationFailure,
   type NativeRestartRecoveryClaim,
-  rebindNativeSessionCheckpoint,
   resolveHeartbeatNativeRuntimeMode,
 } from "./native-runtime/index.js";
+
 import {
-  assertAgentCoreProfileRecoveryBinding,
-  assertManagedProfileRecoveryBinding,
-  projectPaperclipRunnerTaskConfig,
-  resolvePaperclipRunnerNativeProviderInput,
-} from "./native-runtime/provider-profile.js";
-import { readRemoteCodexModelCliVersion } from "./native-runtime/codex-model-fallback.js";
-import {
-  buildNativeHeartbeatPreparationSpans,
-  buildNativeWakeIngressSpan,
   recordFailedSkillPreparation,
   type NativeRunHistoricalSpan,
 } from "./native-runtime/native-run-trace.js";
 import {
-  describeRunnerdNativeSessionBackend,
   parseNativeExecutionInput,
   type NativeExecutionInput,
-  type NativeSessionGoalControl,
   type NativeSessionBackend,
 } from "../vendor/paperclip-runner/index.js";
 import { createNativeSessionHandoffLoader } from "./native-runtime/native-session-handoff.js";
-import { normalizeResponsibleUserDenialCode } from "./responsible-user-denial-run-outcomes.js";
+
 import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
 import {
   providerTraceStore,
-  PROVIDER_TRACE_MAX_BYTES,
 } from "./provider-trace-store.js";
 import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type {
-  AdapterExecutionResult,
   AdapterInvocationMeta,
   AdapterRuntimeEvent,
 } from "../adapters/index.js";
-import { createLocalAgentJwt } from "../agent-auth-jwt.js";
+
 import { createRuntimeToolsToken } from "../runtime-tools-token.js";
 import {
   parseObject,
-  asNumber,
 } from "../adapters/utils.js";
 
 import {
   EXTERNAL_CHAT_QUESTION_RESPONSE_KEY,
 } from "./native-runtime/external-chat-question-response.js";
-import { materializeExternalChatQuestionResponseInput } from "./native-runtime/external-chat-question-response-input.js";
+
 import {
   NativeRunnerOwnershipUnverifiedError,
   isNativeRunnerOwnershipHeld,
@@ -530,18 +423,17 @@ import {
 } from "./native-runtime/native-runner-ownership.js";
 import {
   findNativeChatWorkspaceScope,
-  materializeNativeChatTaskRoot,
   nativeChatWorkspaceCwd,
   nativeChatWorkspaceMatches,
 } from "./native-runtime/native-chat-workspace.js";
-import { materializeIsolatedTaskDirectory, shouldUseIsolatedTaskDirectory } from "./isolated-task-directory.js";
+import { shouldUseIsolatedTaskDirectory } from "./isolated-task-directory.js";
 import { trackAgentFirstHeartbeat } from "@paperclipai/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
 import {
   emitAgentTaskRun,
   emitAgentTaskRunById,
 } from "./agent-task-run-telemetry.js";
-import { readAiConnectionConfigurationFailure } from "./ai-connection-configuration-failure.js";
+import { readAiConnectionConfigurationFailure, readAiCredentialAccessFailure } from "./ai-connection-configuration-failure.js";
 import { reportRunFailure } from "./run-failure-report.js";
 
 import { collectRunFailureSecretValues, type RunFailureReportOptions } from "./run-failure-diagnostics.js";
@@ -557,19 +449,7 @@ import {
 } from "../home-paths.js";
 import {
   buildHeartbeatRunIssueComment,
-  CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
-  isExternalChatPresentationContext,
-  mergeHeartbeatRunResultJson,
-  resolveHeartbeatRunResponse,
-  type RunPresentationDecision,
 } from "./heartbeat-run-summary.js";
-import {
-  normalizeMaxTurnStopReason,
-} from "./heartbeat-stop-metadata.js";
-import {
-  CHAT_CONTROL_RECOVERY_ADMISSION_KEY,
-  CHAT_CONTROL_RECOVERY_UNRESOLVED_CODE,
-} from "./chat-control-recovery-stop.js";
 
 import {
   logActivity,
@@ -579,42 +459,19 @@ import {
   buildWorkspaceReadyComment,
   buildWorkspaceReadyMetadata,
   buildWorkspaceReadyPresentation,
-  cleanupExecutionWorkspaceArtifacts,
-  ensureGitWorktreeBranchCoherent,
-  ensurePersistedExecutionWorkspaceAvailable,
   ensureRuntimeServicesForRun,
-  formatManagedGitWorktreeBranchInspection,
-  inspectManagedGitWorktreeBranch,
   persistAdapterManagedRuntimeServices,
-  realizeExecutionWorkspace,
   releaseRuntimeServicesForRun,
-  isUnresolvedWorkspaceBaseRefError,
-  type ExecutionWorkspaceInput,
   type RealizedExecutionWorkspace,
   type RuntimeServiceRef,
-  type UnresolvedWorkspaceBaseRefError,
 } from "./workspace-runtime.js";
 
-import {
-  readManagedWorktreeInstanceOwnership,
-  WORKTREE_INSTANCE_ROOT_METADATA_KEY,
-} from "./workspace-instance-cleanup.js";
 import { issueService } from "./issues.js";
 import {
-  blockRunnerGoalRecovery,
   failRunnerGoalAction,
-  isRunnerGoalActionCompleted,
-  runnerGoalService,
-  settleLiveRunnerGoalBeforeInterrupt,
 } from "./runner-goals.js";
-import { resolveChatRunPresentationAuthorizationReason } from "./chat-run-publications.js";
-
-import { visibleIssueCondition } from "./issue-visibility.js";
 
 import {
-  buildIssueMonitorClearedPatch,
-  buildIssueMonitorTriggeredPatch,
-  normalizeIssueExecutionPolicy,
   parseIssueExecutionState,
 } from "./issue-execution-policy.js";
 import {
@@ -624,9 +481,7 @@ import {
   continuationSummaryParksExecutor,
   getIssueContinuationSummaryDocument,
 } from "./issue-continuation-summary.js";
-import {
-  buildPlanReviewContext,
-} from "./plan-review-context.js";
+
 import {
   executionWorkspaceService,
 } from "./execution-workspaces.js";
@@ -636,9 +491,7 @@ import {
 import {
   isProcessGroupAlive,
 } from "./local-service-supervisor.js";
-import {
-  isRuntimeOwnedGitBranch,
-} from "./execution-workspace-branch-ownership.js";
+
 import {
   HEARTBEAT_RUN_SCRATCH_MARKER,
   buildHeartbeatRunScratchEnv,
@@ -650,10 +503,8 @@ import {
   applyDefaultIsolatedExecutionWorkspacePolicy,
   buildExecutionWorkspaceAdapterConfig,
   gateProjectExecutionWorkspacePolicy,
-  issueExecutionWorkspaceModeForPersistedWorkspace,
   parseIssueExecutionWorkspaceSettings,
   parseProjectExecutionWorkspacePolicy,
-  resolveEffectiveWorkspaceStrategyType,
   resolveExecutionWorkspaceEnvironmentId,
   resolveExecutionWorkspaceMode,
   resolveSharedWorkspaceConcurrency,
@@ -664,21 +515,17 @@ import {
   resolveWorktreeRunExecutionActivation,
 } from "./instance-settings.js";
 import {
-  evaluateExecutionAllowlist,
   isExecutionForcedToKubernetes,
 } from "./execution-allowlist.js";
-import {
-  RECOVERY_ORIGIN_KINDS,
-} from "./recovery/index.js";
+
 import {
   buildConfigurationIncompleteRecoveryNoticeSeed,
   buildExecutionReviewParticipantRecoveryNoticeSeed,
   buildImmediateExecutionPathRecoveryNoticeSeed,
   buildWorkspaceValidationRecoveryNoticeSeed,
-  SANDBOX_PROVIDER_PLUGIN_NOT_READY_REASON,
   type StrandedRecoveryNoticeSeed,
 } from "./recovery/stranded-notice.js";
-import { withRecoveryContext } from "./recovery/status-only-context.js";
+
 import { recoveryService } from "./recovery/service.js";
 import {
   createRunDispatch,
@@ -701,14 +548,10 @@ import {
   type ReleaseRecoveryBlockedNoticeKind,
   type RunSnapshot as WakeQueueRunSnapshot,
 } from "../modules/wake-queue/index.js";
-import {
-  REVIEW_PATH_RECOVERY_INSTRUCTION,
-} from "./recovery/review-path-recovery.js";
 
 import { taskWatchdogService } from "./task-watchdogs.js";
 
 import {
-  evaluateAgentInvokability,
   evaluateAgentInvokabilityFromDb,
   DIRECT_NON_INVOKABLE_STATUSES,
 } from "./agent-invokability.js";
@@ -722,16 +565,10 @@ import {
 } from "../log-redaction.js";
 
 import { createRunSecretRedactionRegistry } from "./run-secret-redaction.js";
-import {
-  resolvePaperclipRunnerIdleTimeoutMs,
-} from "@paperclipai/adapter-utils";
+
 import {
   readPaperclipSkillSyncPreference,
-  selectPaperclipTaskMarkdown,
 } from "@paperclipai/adapter-utils/server-utils";
-import {
-  isUuidLike,
-} from "@paperclipai/shared";
 
 import { environmentService } from "./environments.js";
 import { parseExecutionPolicyBootstrapEnv } from "./execution-policy-bootstrap.js";
@@ -792,143 +629,12 @@ const EXECUTION_REVIEW_PARTICIPANT_RECOVERY_RETRY_REASON =
 const EXECUTION_REVIEW_PARTICIPANT_RECOVERY_CAUSE =
   "execution_review_participant_recovery";
 
-function nonRetryablePreflightFailureCode(error: unknown): string | null {
-  if (error instanceof ChatControlRecoveryUnresolvedError)
-    return CHAT_CONTROL_RECOVERY_UNRESOLVED_CODE;
-  if (
-    error instanceof HttpError &&
-    error.status === 409 &&
-    parseObject(error.details).code === "chat_failed_run_retry_not_authorized"
-  ) {
-    return "chat_failed_run_retry_not_authorized";
-  }
-  if (!(error instanceof HttpError) || error.status !== 422) return null;
-  const code = readNonEmptyString(parseObject(error.details).code);
-  return code && NON_RETRYABLE_PREFLIGHT_FAILURE_CODES.has(code) ? code : null;
-}
 export { MAX_TURN_CONTINUATION_RETRY_REASON };
-export const MAX_TURN_CONTINUATION_WAKE_REASON = "max_turns_continuation_retry";
 
 export { WORKSPACE_BUSY_RETRY_REASON };
 
-// Build the configuration-incomplete result payload for a workspace base ref
-// that never resolved to a commit. The setup catch maps this to errorCode
-// `configuration_incomplete`, so the recovery path routes it to a human owner
-// instead of a dispatched-then-failed run. The `fingerprint` uses the canonical
-// remote ref, not the operator spelling. Two equivalent spellings of one remote
-// branch (`fix/foo` and `origin/fix/foo`) share one fingerprint, so a repeated
-// failure reuses one active recovery action and does not reset the attempt
-// count or post a duplicate notice. A different branch makes a new action.
-// Build the configuration-incomplete result payload for a sandbox provider
-// plugin that is installed but not `ready`. The `fingerprint` is the plugin
-// key plus its status, so every run that hits the same stuck plugin reuses
-// one active recovery action instead of posting a fresh notice per attempt,
-// while a status change (say `error` -> `disabled`) makes a new one.
-function buildSandboxProviderPluginNotReadyResultJson(
-  run: typeof heartbeatRuns.$inferSelect,
-  failure: { provider: string; pluginKey: string; pluginStatus: string },
-): Record<string, unknown> {
-  const context = parseObject(run.contextSnapshot);
-  return {
-    configurationIncomplete: {
-      reason: SANDBOX_PROVIDER_PLUGIN_NOT_READY_REASON,
-      companyId: run.companyId,
-      agentId: run.agentId,
-      issueId: readNonEmptyString(context.issueId) ?? null,
-      projectId: readNonEmptyString(context.projectId) ?? null,
-      sandboxProvider: failure.provider,
-      pluginKey: failure.pluginKey,
-      pluginStatus: failure.pluginStatus,
-      fingerprint: `sandbox_provider_plugin:${failure.pluginKey}:${failure.pluginStatus}`,
-      missingBindings: [],
-    },
-  };
-}
-
-function buildUnresolvedWorkspaceBaseRefResultJson(
-  run: typeof heartbeatRuns.$inferSelect,
-  error: UnresolvedWorkspaceBaseRefError,
-): Record<string, unknown> {
-  const context = parseObject(run.contextSnapshot);
-  return {
-    configurationIncomplete: {
-      reason: "workspace_base_ref_unresolved",
-      companyId: run.companyId,
-      agentId: run.agentId,
-      issueId: readNonEmptyString(context.issueId) ?? null,
-      projectId: readNonEmptyString(context.projectId) ?? null,
-      requestedRef: error.requestedRef,
-      attemptedRefs: error.attemptedRefs,
-      fetchError: error.fetchError,
-      fingerprint: `workspace_base_ref:${error.recoveryIdentityRef}`,
-      missingBindings: [],
-    },
-  };
-}
-
 export { isNonAssigneeWorkspaceBusyRetry };
 
-function isMaxTurnExhaustionRun(
-  run: Pick<typeof heartbeatRuns.$inferSelect, "errorCode" | "resultJson">,
-) {
-  const resultJson = parseObject(run.resultJson);
-  return Boolean(
-    normalizeMaxTurnStopReason(resultJson.stopReason) ??
-    normalizeMaxTurnStopReason(run.errorCode),
-  );
-}
-
-// environment-runtime.ts's resolveSandboxProviderPlugin "not_ready" message,
-// e.g. 'Sandbox provider "kubernetes" is installed via plugin
-// "acme.kubernetes-sandbox-provider", but that plugin is currently error.'
-// The plugin row exists but its status is `error` (a failed activation),
-// `disabled` (an operator switched it off) or `upgrade_pending`. Unlike the
-// worker restart window above, nothing on the run path ever changes that
-// status: only an operator enabling the plugin, or a server boot that
-// re-activates a bundled plugin, does. Re-running the agent produces the
-// identical failure every time, so the setup catch classifies it as
-// `configuration_incomplete` (routed to a human owner) instead of a retryable
-// `setup_failed` that the scheduler would keep re-dispatching.
-const SANDBOX_PROVIDER_PLUGIN_NOT_READY_RE =
-  /sandbox provider "([^"]*)" is installed via plugin "([^"]*)", but that plugin is currently (error|disabled|upgrade_pending)\b/i;
-
-export function parseSandboxProviderPluginNotReadyFailureMessage(
-  value: unknown,
-): { provider: string; pluginKey: string; pluginStatus: string } | null {
-  if (typeof value !== "string") return null;
-  const match = SANDBOX_PROVIDER_PLUGIN_NOT_READY_RE.exec(value);
-  if (!match) return null;
-  return {
-    provider: match[1] ?? "",
-    pluginKey: match[2] ?? "",
-    pluginStatus: (match[3] ?? "").toLowerCase(),
-  };
-}
-
-function mergeAdapterRecoveryMetadata(input: {
-  resultJson: Record<string, unknown> | null | undefined;
-  errorFamily?: string | null;
-  retryNotBefore?: string | null;
-}) {
-  const errorFamily = readNonEmptyString(input.errorFamily);
-  const retryNotBefore = readNonEmptyString(input.retryNotBefore);
-  if (!input.resultJson && !errorFamily && !retryNotBefore)
-    return input.resultJson ?? null;
-
-  return {
-    ...(input.resultJson ?? {}),
-    ...(errorFamily ? { errorFamily } : {}),
-    ...(retryNotBefore
-      ? {
-          retryNotBefore,
-          transientRetryNotBefore: retryNotBefore,
-          ...(errorFamily === "provider_quota"
-            ? { providerQuotaRetryNotBefore: retryNotBefore }
-            : {}),
-        }
-      : {}),
-  };
-}
 // Routes and the scheduler construct separate heartbeatService instances, but
 // they must agree on in-process adapter executions when reaping stale runs.
 const activeRunExecutions = new Set<string>();
@@ -1004,79 +710,11 @@ export function getTaskDrainStatus(): {
   };
 }
 
-export interface NativeSandboxLifecycle {
-  runnerProcess: "per_turn" | "warm";
-  sandboxResource: "keep_running" | "stop_and_reuse" | "destroy_after_turn";
-  failoverBackup: "verified";
-}
+export { type NativeSandboxLifecycle } from "./heartbeat/runtime-selection.js";
 
-export function resolveReusableSandboxLifecycle(input: {
-  lifecyclePolicy:
-    | { mode: "per_turn"; idleTimeoutMs: null }
-    | { mode: "warm"; idleTimeoutMs: number };
-  target: {
-    kind: "local" | "remote";
-    transport?: string;
-    reusableLeaseConfigured?: boolean;
-    effectiveCapabilities?: { reusableLeases: boolean } | null;
-  } | null;
-}): NativeSandboxLifecycle | null {
-  if (input.target?.kind !== "remote" || input.target.transport !== "sandbox") {
-    return null;
-  }
-  const reusableLease =
-    input.target.reusableLeaseConfigured === true &&
-    input.target.effectiveCapabilities?.reusableLeases === true;
-  if (input.lifecyclePolicy.mode === "warm" && !reusableLease) {
-    throw new Error("runner_warm_lifecycle_requires_reusable_provider_lease");
-  }
-  return {
-    runnerProcess: input.lifecyclePolicy.mode,
-    sandboxResource:
-      input.lifecyclePolicy.mode === "warm"
-        ? "keep_running"
-        : reusableLease
-          ? "stop_and_reuse"
-          : "destroy_after_turn",
-    failoverBackup: "verified",
-  };
-}
+export { resolveReusableSandboxLifecycle } from "./heartbeat/runtime-selection.js";
 
-export function resolveNativeSandboxLifecycle(input: {
-  adapterType: string;
-  lifecyclePolicy:
-    | { mode: "per_turn"; idleTimeoutMs: null }
-    | { mode: "warm"; idleTimeoutMs: number };
-  target: {
-    kind: "local" | "remote";
-    transport?: string;
-    reusableLeaseConfigured?: boolean;
-    effectiveCapabilities?: { reusableLeases: boolean } | null;
-  } | null;
-}): NativeSandboxLifecycle | null {
-  if (
-    input.adapterType !== "paperclip_runner" ||
-    input.target?.kind !== "remote" ||
-    input.target.transport !== "sandbox"
-  )
-    return null;
-  return resolveReusableSandboxLifecycle(input);
-}
-
-function isConfigurationIncompleteFailure(
-  error: unknown,
-): error is ConfigurationIncompleteFailure {
-  return error instanceof ConfigurationIncompleteFailure;
-}
-
-export function isConfigurationIncompleteFailedRun(
-  run: Pick<typeof heartbeatRuns.$inferSelect, "errorCode"> | null | undefined,
-) {
-  return (
-    run?.errorCode === CONFIGURATION_INCOMPLETE_FAILURE_CODE ||
-    run?.errorCode === "model_not_found"
-  );
-}
+export { resolveNativeSandboxLifecycle } from "./heartbeat/runtime-selection.js";
 
 interface ParsedIssueAssigneeAdapterOverrides {
   adapterConfig: Record<string, unknown> | null;
@@ -1086,36 +724,6 @@ interface ParsedIssueAssigneeAdapterOverrides {
 function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
-
-function parseNativeSessionGoalControl(
-  value: unknown,
-): NativeSessionGoalControl | null {
-  const candidate = parseObject(value);
-  const requestId = readNonEmptyString(candidate.requestId);
-  const action = readNonEmptyString(candidate.action);
-  if (
-    !requestId ||
-    !action ||
-    !["create", "edit", "replace", "pause", "resume", "clear"].includes(action)
-  )
-    return null;
-  const objective = readNonEmptyString(candidate.objective);
-  const tokenBudget =
-    candidate.tokenBudget === null
-      ? null
-      : typeof candidate.tokenBudget === "number" &&
-          Number.isSafeInteger(candidate.tokenBudget) &&
-          candidate.tokenBudget > 0
-        ? candidate.tokenBudget
-        : undefined;
-  return {
-    requestId,
-    action: action as NativeSessionGoalControl["action"],
-    ...(objective ? { objective } : {}),
-    ...(tokenBudget !== undefined ? { tokenBudget } : {}),
-  };
-}
-
 
 function parseIssueAssigneeAdapterOverrides(
   raw: unknown,
@@ -1168,30 +776,6 @@ export function filterZombieCoalesceTarget<
   T extends { status: string; id: string },
 >(target: T | null, tracked: { has(id: string): boolean }): T | null {
   return target && isZombieRun(target, tracked) ? null : target;
-}
-
-/**
- * Failure signatures from sandbox→host git workspace reconciliation. These
- * describe the state of the SHARED workspace (divergent histories written by
- * different runs), not a defect in the agent that happened to run last —
- * putting the agent into a sticky `error` state over them removes a healthy
- * agent from rotation while leaving the actual problem (the workspace)
- * untouched. The run still fails and carries the full message.
- */
-const WORKSPACE_SYNC_CONFLICT_SIGNATURES = [
-  "Failed to merge concurrent remote git histories",
-  "Failed to integrate concurrent remote git history",
-  "did not send all necessary objects",
-  "lacks these prerequisite commits",
-];
-
-export function isWorkspaceSyncConflictFailure(
-  message: string | null | undefined,
-): boolean {
-  if (!message) return false;
-  return WORKSPACE_SYNC_CONFLICT_SIGNATURES.some((signature) =>
-    message.includes(signature),
-  );
 }
 
 export function shouldAutoCheckoutIssueForWake(input: {
@@ -1295,25 +879,6 @@ export interface HeartbeatServiceOptions {
   }) => Promise<void>;
 }
 
-class NativeSessionResumeScheduledError extends Error {
-  constructor(readonly original: unknown) {
-    super("Native session recovery has been scheduled for the same run.");
-    this.name = "NativeSessionResumeScheduledError";
-  }
-}
-
-class NativeWorkspaceFinalizeScheduledError extends Error {
-  constructor(
-    readonly original: unknown,
-    readonly terminalFailure: boolean,
-    readonly reasonCode:
-      "workspace_sync_out_failed" | "workspace_sync_out_unrecoverable",
-  ) {
-    super("Native workspace finalization recovery has been scheduled.");
-    this.name = "NativeWorkspaceFinalizeScheduledError";
-  }
-}
-
 type WorkspaceReadyCommentWriter = {
   addComment: (
     issueId: string,
@@ -1349,38 +914,7 @@ export function postWorkspaceReadyComment(input: {
   );
 }
 
-export async function postNativeModelFallbackWarning(input: {
-  issuesSvc: Pick<ReturnType<typeof issueService>, "addComment">;
-  onEvent: (event: AdapterRuntimeEvent) => Promise<void>;
-  issueId: string;
-  runId: string;
-  requestedModel: string | null;
-  effectiveModel: string | null;
-  codexCliVersion: string;
-}): Promise<void> {
-  const message = `Using ${input.effectiveModel} because the sandbox's Codex ${input.codexCliVersion} does not support ${input.requestedModel}. Work will continue with the compatible model. Update the sandbox's Codex CLI to use the requested model.`;
-  await input.onEvent({
-    eventType: "runner.model_fallback",
-    stream: "system",
-    level: "warn",
-    message,
-    payload: {
-      requestedModel: input.requestedModel,
-      effectiveModel: input.effectiveModel,
-      codexCliVersion: input.codexCliVersion,
-    },
-  });
-  await input.issuesSvc.addComment(input.issueId, message, { runId: input.runId }, {
-    authorType: "system",
-    presentation: {
-      kind: "system_notice",
-      tone: "warning",
-      title: `Using ${input.effectiveModel}`,
-      density: "compact",
-      detailsDefaultOpen: false,
-    },
-  });
-}
+export { postNativeModelFallbackWarning } from "./heartbeat/runtime-selection.js";
 
 function isTruthyRuntimeEnvValue(value: string | undefined) {
   return value === "true" || value === "1" || value === "yes" || value === "on";
@@ -1823,6 +1357,7 @@ export function heartbeatService(
   });
 
   const heartbeatQueue = createHeartbeatQueue(db, {
+    applyWakeQueuePostCommitEffects,
     setRunStatus,
     setWakeupStatus,
     appendRunEvent,
@@ -2109,871 +1644,24 @@ export function heartbeatService(
     return evaluateAgentInvokabilityFromDb(db, agent);
   }
 
-  const issueMonitorDispatchColumns = {
-    id: issues.id,
-    companyId: issues.companyId,
-    projectId: issues.projectId,
-    goalId: issues.goalId,
-    identifier: issues.identifier,
-    title: issues.title,
-    status: issues.status,
-    priority: issues.priority,
-    assigneeAgentId: issues.assigneeAgentId,
-    assigneeUserId: issues.assigneeUserId,
-    billingCode: issues.billingCode,
-    executionPolicy: issues.executionPolicy,
-    executionState: issues.executionState,
-    monitorNextCheckAt: issues.monitorNextCheckAt,
-    monitorWakeRequestedAt: issues.monitorWakeRequestedAt,
-    monitorLastTriggeredAt: issues.monitorLastTriggeredAt,
-    monitorAttemptCount: issues.monitorAttemptCount,
-    monitorNotes: issues.monitorNotes,
-    monitorScheduledBy: issues.monitorScheduledBy,
-  };
-
-  interface IssueMonitorDispatchRow {
-    id: string;
-    companyId: string;
-    projectId: string | null;
-    goalId: string | null;
-    identifier: string | null;
-    title: string;
-    status: string;
-    priority: string;
-    assigneeAgentId: string | null;
-    assigneeUserId: string | null;
-    billingCode: string | null;
-    executionPolicy: Record<string, unknown> | null;
-    executionState: Record<string, unknown> | null;
-    monitorNextCheckAt: Date | null;
-    monitorWakeRequestedAt: Date | null;
-    monitorLastTriggeredAt: Date | null;
-    monitorAttemptCount: number | null;
-    monitorNotes: string | null;
-    monitorScheduledBy: string | null;
-  }
-
-  function parseMonitorDate(value: string | null | undefined) {
-    if (!value) return null;
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-
-  function issueMonitorLimitClearReason(input: {
-    monitor: IssueExecutionMonitorPolicy | null;
-    nextAttemptCount: number;
-    now: Date;
-  }): IssueExecutionMonitorClearReason | null {
-    const timeoutAt = parseMonitorDate(input.monitor?.timeoutAt ?? null);
-    if (timeoutAt && input.now.getTime() >= timeoutAt.getTime()) {
-      return "timeout_exceeded";
-    }
-    const maxAttempts = input.monitor?.maxAttempts ?? null;
-    if (maxAttempts !== null && input.nextAttemptCount > maxAttempts) {
-      return "max_attempts_exhausted";
-    }
-    return null;
-  }
-
-  function monitorRecoveryPolicy(
-    monitor: IssueExecutionMonitorPolicy | null,
-  ): IssueExecutionMonitorRecoveryPolicy {
-    return monitor?.recoveryPolicy ?? "wake_owner";
-  }
-
-  function monitorRecoveryDetails(input: {
-    claimed: IssueMonitorDispatchRow;
-    scheduledAtIso: string;
-    nextAttemptCount: number;
-    clearReason: IssueExecutionMonitorClearReason;
-    recoveryPolicy: IssueExecutionMonitorRecoveryPolicy;
-    monitor: IssueExecutionMonitorPolicy | null;
-    source: "manual" | "scheduled";
-  }) {
-    return {
-      identifier: input.claimed.identifier,
-      nextCheckAt: input.scheduledAtIso,
-      attemptedAttemptCount: input.nextAttemptCount,
-      notes: input.claimed.monitorNotes ?? null,
-      serviceName: input.monitor?.serviceName ?? null,
-      timeoutAt: input.monitor?.timeoutAt ?? null,
-      maxAttempts: input.monitor?.maxAttempts ?? null,
-      clearReason: input.clearReason,
-      recoveryPolicy: input.recoveryPolicy,
-      source: input.source,
-    };
-  }
-
-  function formatIssueIdentifierLink(
-    identifier: string | null,
-    fallback: string,
-  ) {
-    if (!identifier) return fallback;
-    const prefix = identifier.split("-")[0];
-    if (!prefix || !/^[A-Z][A-Z0-9]*-\d+$/.test(identifier)) return identifier;
-    return `[${identifier}](/${prefix}/issues/${identifier})`;
-  }
-
-  function monitorRecoveryComment(input: {
-    issue: IssueMonitorDispatchRow;
-    clearReason: IssueExecutionMonitorClearReason;
-    recoveryPolicy: IssueExecutionMonitorRecoveryPolicy;
-    nextAttemptCount: number;
-  }) {
-    const label = formatIssueIdentifierLink(
-      input.issue.identifier,
-      input.issue.id,
-    );
-    const reason =
-      input.clearReason === "timeout_exceeded"
-        ? "its timeout was reached"
-        : "its maximum attempt count was reached";
-    return [
-      `Paperclip cleared the scheduled external-service monitor for ${label} because ${reason}.`,
-      "",
-      `- Attempt count: ${input.nextAttemptCount}`,
-      `- Recovery policy: ${input.recoveryPolicy}`,
-      "",
-      "Next action: inspect the external service state, record the result on this issue, and restore an explicit execution or waiting path if more work remains.",
-    ].join("\n");
-  }
-
-  async function findOpenIssueMonitorRecoveryIssue(
-    claimed: IssueMonitorDispatchRow,
-  ) {
-    return db
-      .select()
-      .from(issues)
-      .where(
-        and(
-          eq(issues.companyId, claimed.companyId),
-          eq(issues.originKind, RECOVERY_ORIGIN_KINDS.strandedIssueRecovery),
-          eq(issues.originId, claimed.id),
-          visibleIssueCondition(),
-          notInArray(issues.status, ["done", "cancelled"]),
-        ),
-      )
-      .orderBy(desc(issues.createdAt))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-  }
-
-  async function performIssueMonitorRecovery(input: {
-    claimed: IssueMonitorDispatchRow;
-    scheduledAtIso: string;
-    nextAttemptCount: number;
-    clearReason: IssueExecutionMonitorClearReason;
-    recoveryPolicy: IssueExecutionMonitorRecoveryPolicy;
-    monitor: IssueExecutionMonitorPolicy | null;
-    actorType: "user" | "agent" | "system";
-    actorId: string;
-    agentId: string | null;
-    runId: string | null;
-    activitySource: "manual" | "scheduled";
-  }) {
-    const reviewPathLost =
-      input.claimed.status === "in_review" &&
-      (await issuesSvc
-        .listReviewAttention(input.claimed.companyId, [input.claimed])
-        .then(
-          (attention) => attention.get(input.claimed.id)?.state === "stalled",
-        ));
-    const reviewPathContext = reviewPathLost
-      ? {
-          reviewPathLost: true,
-          reviewPathConsumedRef: `monitor:${input.claimed.id}:${input.clearReason}:${input.scheduledAtIso}`,
-          reviewPathInstruction: REVIEW_PATH_RECOVERY_INSTRUCTION,
-        }
-      : null;
-    const details = monitorRecoveryDetails({
-      claimed: input.claimed,
-      scheduledAtIso: input.scheduledAtIso,
-      nextAttemptCount: input.nextAttemptCount,
-      clearReason: input.clearReason,
-      recoveryPolicy: input.recoveryPolicy,
-      monitor: input.monitor,
-      source: input.activitySource,
-    });
-
-    if (input.recoveryPolicy === "create_recovery_issue") {
-      let recoveryIssue = await findOpenIssueMonitorRecoveryIssue(
-        input.claimed,
-      );
-      if (!recoveryIssue) {
-        recoveryIssue = await issuesSvc.create(input.claimed.companyId, {
-          title: `Recover external-service monitor for ${input.claimed.identifier ?? input.claimed.title}`,
-          description: monitorRecoveryComment({
-            issue: input.claimed,
-            clearReason: input.clearReason,
-            recoveryPolicy: input.recoveryPolicy,
-            nextAttemptCount: input.nextAttemptCount,
-          }),
-          status: "todo",
-          priority: "high",
-          parentId: input.claimed.id,
-          projectId: input.claimed.projectId,
-          goalId: input.claimed.goalId,
-          assigneeAgentId: input.claimed.assigneeAgentId,
-          originKind: RECOVERY_ORIGIN_KINDS.strandedIssueRecovery,
-          originId: input.claimed.id,
-          originFingerprint: `issue_monitor:${input.clearReason}`,
-          billingCode: input.claimed.billingCode,
-        });
-      }
-
-      if (recoveryIssue.assigneeAgentId) {
-        await enqueueWakeup(recoveryIssue.assigneeAgentId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: "issue_monitor_recovery_issue",
-          idempotencyKey: `issue-monitor-recovery-issue:${input.claimed.id}:${input.clearReason}:${input.scheduledAtIso}`,
-          payload: withRecoveryContext(
-            { issueId: recoveryIssue.id, sourceIssueId: input.claimed.id },
-            "status_only",
-          ),
-          requestedByActorType: input.actorType,
-          requestedByActorId: input.actorId,
-          contextSnapshot: withRecoveryContext(
-            {
-              issueId: recoveryIssue.id,
-              sourceIssueId: input.claimed.id,
-              source: "issue.monitor.recovery_issue",
-              wakeReason: "issue_monitor_recovery_issue",
-            },
-            "status_only",
-          ),
-        });
-      }
-
-      await logActivity(db, {
-        companyId: input.claimed.companyId,
-        actorType: input.actorType,
-        actorId: input.actorId,
-        agentId: input.agentId,
-        runId: input.runId,
-        action: "issue.monitor_recovery_issue_created",
-        entityType: "issue",
-        entityId: input.claimed.id,
-        details: {
-          ...details,
-          recoveryIssueId: recoveryIssue.id,
-          recoveryIdentifier: recoveryIssue.identifier,
-        },
-      });
-      return;
-    }
-
-    if (input.recoveryPolicy === "escalate_to_board") {
-      await db.insert(issueComments).values({
-        companyId: input.claimed.companyId,
-        issueId: input.claimed.id,
-        body: monitorRecoveryComment({
-          issue: input.claimed,
-          clearReason: input.clearReason,
-          recoveryPolicy: input.recoveryPolicy,
-          nextAttemptCount: input.nextAttemptCount,
-        }),
-      });
-
-      await logActivity(db, {
-        companyId: input.claimed.companyId,
-        actorType: input.actorType,
-        actorId: input.actorId,
-        agentId: input.agentId,
-        runId: input.runId,
-        action: "issue.monitor_escalated_to_board",
-        entityType: "issue",
-        entityId: input.claimed.id,
-        details,
-      });
-      return;
-    }
-
-    await enqueueWakeup(input.claimed.assigneeAgentId!, {
-      source: "automation",
-      triggerDetail: "system",
-      reason: "issue_monitor_recovery",
-      idempotencyKey: `issue-monitor-recovery:${input.claimed.id}:${input.clearReason}:${input.scheduledAtIso}`,
-      payload: withRecoveryContext(
-        {
-          issueId: input.claimed.id,
-          monitorAttemptCount: input.nextAttemptCount,
-          monitorNotes: input.claimed.monitorNotes ?? null,
-          clearReason: input.clearReason,
-          serviceName: input.monitor?.serviceName ?? null,
-          timeoutAt: input.monitor?.timeoutAt ?? null,
-          maxAttempts: input.monitor?.maxAttempts ?? null,
-          ...(reviewPathContext ?? {}),
-        },
-        "status_only",
-      ),
-      requestedByActorType: input.actorType,
-      requestedByActorId: input.actorId,
-      contextSnapshot: withRecoveryContext(
-        {
-          issueId: input.claimed.id,
-          source: "issue.monitor.recovery",
-          wakeReason: "issue_monitor_recovery",
-          monitorAttemptCount: input.nextAttemptCount,
-          monitorNotes: input.claimed.monitorNotes ?? null,
-          clearReason: input.clearReason,
-          serviceName: input.monitor?.serviceName ?? null,
-          timeoutAt: input.monitor?.timeoutAt ?? null,
-          maxAttempts: input.monitor?.maxAttempts ?? null,
-          ...(reviewPathContext ?? {}),
-        },
-        "status_only",
-      ),
-    });
-
-    await logActivity(db, {
-      companyId: input.claimed.companyId,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      agentId: input.agentId,
-      runId: input.runId,
-      action: "issue.monitor_recovery_wake_queued",
-      entityType: "issue",
-      entityId: input.claimed.id,
-      details,
-    });
-  }
-
-  async function clearIssueMonitorAndRecover(input: {
-    claimed: IssueMonitorDispatchRow;
-    policy: ReturnType<typeof normalizeIssueExecutionPolicy>;
-    scheduledAtIso: string;
-    nextAttemptCount: number;
-    clearReason: IssueExecutionMonitorClearReason;
-    recoveryPolicy: IssueExecutionMonitorRecoveryPolicy;
-    monitor: IssueExecutionMonitorPolicy | null;
-    now: Date;
-    actorType: "user" | "agent" | "system";
-    actorId: string;
-    agentId: string | null;
-    runId: string | null;
-    activitySource: "manual" | "scheduled";
-  }) {
-    const cleared = await db
-      .update(issues)
-      .set({
-        ...monitorOnlyDispatchPatch(buildIssueMonitorClearedPatch({
-          issue: input.claimed,
-          policy: input.policy,
-          clearReason: input.clearReason,
-          clearedAt: input.now,
-        })),
-        updatedAt: input.now,
-      })
-      .where(issueMonitorClaimCondition(input.claimed)).returning({ id: issues.id });
-    if (cleared.length === 0) return { outcome: "skipped" as const, reason: "monitor_replaced" };
-
-    await logActivity(db, {
-      companyId: input.claimed.companyId,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      agentId: input.agentId,
-      runId: input.runId,
-      action: "issue.monitor_exhausted",
-      entityType: "issue",
-      entityId: input.claimed.id,
-      details: monitorRecoveryDetails({
-        claimed: input.claimed,
-        scheduledAtIso: input.scheduledAtIso,
-        nextAttemptCount: input.nextAttemptCount,
-        clearReason: input.clearReason,
-        recoveryPolicy: input.recoveryPolicy,
-        monitor: input.monitor,
-        source: input.activitySource,
-      }),
-    });
-
-    await performIssueMonitorRecovery({
-      claimed: input.claimed,
-      scheduledAtIso: input.scheduledAtIso,
-      nextAttemptCount: input.nextAttemptCount,
-      clearReason: input.clearReason,
-      recoveryPolicy: input.recoveryPolicy,
-      monitor: input.monitor,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      agentId: input.agentId,
-      runId: input.runId,
-      activitySource: input.activitySource,
-    });
-
-    return { outcome: "skipped" as const, reason: input.clearReason };
-  }
-
-  function monitorOnlyDispatchPatch<T extends ReturnType<typeof buildIssueMonitorClearedPatch>>(patch: T) {
-    // Admission and consumption are separate transactions. Preserve any review
-    // policy/state changes made between them; only the monitor belongs to us.
-    return {
-      ...patch,
-      executionPolicy: sql`nullif(${issues.executionPolicy} - 'monitor', '{}'::jsonb)`,
-      executionState: sql`jsonb_set(coalesce(${issues.executionState}, ${JSON.stringify(patch.executionState)}::jsonb),
-        '{monitor}', ${JSON.stringify(patch.executionState?.monitor ?? null)}::jsonb)`,
-    };
-  }
-
-  function issueMonitorClaimCondition(claimed: IssueMonitorDispatchRow) {
-    return and(eq(issues.id, claimed.id), eq(issues.companyId, claimed.companyId),
-      eq(issues.assigneeAgentId, claimed.assigneeAgentId!), isNull(issues.assigneeUserId),
-      eq(issues.status, claimed.status), eq(issues.monitorNextCheckAt, claimed.monitorNextCheckAt!),
-      eq(issues.monitorWakeRequestedAt, claimed.monitorWakeRequestedAt!));
-  }
-
-  async function dispatchClaimedIssueMonitor(
-    claimed: IssueMonitorDispatchRow,
-    input: {
-      now: Date;
-      source: "automation" | "on_demand";
-      triggerDetail: "manual" | "system";
-      wakeReason: string;
-      actorType: "user" | "agent" | "system";
-      actorId: string;
-      agentId: string | null;
-      runId: string | null;
-      clearOnClientError: boolean;
-      activitySource: "manual" | "scheduled";
-    },
-  ) {
-    if (!claimed.assigneeAgentId || !claimed.monitorNextCheckAt) {
-      throw conflict("Issue monitor is not ready to dispatch");
-    }
-
-    const scheduledAtIso = claimed.monitorNextCheckAt.toISOString();
-    const nextAttemptCount = (claimed.monitorAttemptCount ?? 0) + 1;
-    const policy = normalizeIssueExecutionPolicy(
-      claimed.executionPolicy ?? null,
-    );
-    const monitor = policy?.monitor ?? null;
-    const clearReason = issueMonitorLimitClearReason({
-      monitor,
-      nextAttemptCount,
-      now: input.now,
-    });
-    const recoveryPolicy = monitorRecoveryPolicy(monitor);
-    const monitorMetadata = {
-      serviceName: monitor?.serviceName ?? null,
-      timeoutAt: monitor?.timeoutAt ?? null,
-      maxAttempts: monitor?.maxAttempts ?? null,
-      recoveryPolicy: monitor?.recoveryPolicy ?? null,
-    };
-    const executionState =
-      claimed.status === "in_review"
-        ? parseIssueExecutionState(claimed.executionState)
-        : null;
-    const currentParticipant =
-      executionState?.status === "pending"
-        ? executionState.currentParticipant
-        : null;
-    const reviewParticipantAgentId =
-      currentParticipant?.type === "agent" ? currentParticipant.agentId : null;
-    const isProviderQuotaReviewMonitor =
-      monitor?.serviceName === PROVIDER_QUOTA_MONITOR_SERVICE_NAME &&
-      Boolean(reviewParticipantAgentId);
-    const targetAgentId = isProviderQuotaReviewMonitor
-      ? reviewParticipantAgentId
-      : claimed.assigneeAgentId;
-    if (!targetAgentId) {
-      throw conflict("Issue monitor has no agent target");
-    }
-    const wakeReason = isProviderQuotaReviewMonitor
-      ? EXECUTION_REVIEW_PARTICIPANT_RECOVERY_WAKE_REASON
-      : input.wakeReason;
-    const reviewRecoveryContext = isProviderQuotaReviewMonitor
-      ? {
-          retryReason: EXECUTION_REVIEW_PARTICIPANT_RECOVERY_RETRY_REASON,
-          currentStageId: executionState?.currentStageId ?? null,
-          currentStageType: executionState?.currentStageType ?? null,
-          reviewRecoveryInstruction:
-            "The previous reviewer run reached provider quota. Resume this execution-review stage now that the quota wait has elapsed.",
-        }
-      : {};
-
-    if (clearReason) {
-      return clearIssueMonitorAndRecover({
-        claimed,
-        policy,
-        scheduledAtIso,
-        nextAttemptCount,
-        clearReason,
-        recoveryPolicy,
-        monitor,
-        now: input.now,
-        actorType: input.actorType,
-        actorId: input.actorId,
-        agentId: input.agentId,
-        runId: input.runId,
-        activitySource: input.activitySource,
-      });
-    }
-
-    try {
-      if (monitor?.serviceName === PROVIDER_QUOTA_MONITOR_SERVICE_NAME) {
-        // Normalized monitor projections redact externalRef. Read the claimed
-        // persisted policy only on this server-owned quota recovery path.
-        const sourceRunId = readNonEmptyString(
-          parseObject(parseObject(claimed.executionPolicy).monitor).externalRef,
-        );
-        const sourceRun =
-          sourceRunId && isUuidLike(sourceRunId)
-            ? await getRun(sourceRunId, { unsafeFullResultJson: true })
-            : null;
-        if (
-          !sourceRun ||
-          sourceRun.companyId !== claimed.companyId ||
-          sourceRun.agentId !== targetAgentId ||
-          sourceRun.contextSnapshot?.issueId !== claimed.id ||
-          !["failed", "timed_out", "interrupted", "cancelled"].includes(
-            sourceRun.status,
-          )
-        ) {
-          throw conflict(
-            "The quota recovery source changed; inspect the current task execution.",
-          );
-        }
-        if (sourceRun.runtimeMode === "native") {
-          throw conflict(
-            "Native execution recovery owns this provider failure; a quota monitor cannot start a replacement.",
-          );
-        }
-        if (await legacyExecutionNeedsReconciliationWithEvidence(db, sourceRun)) {
-          await terminalizeLegacyExecution({
-            db,
-            run: sourceRun,
-            status: sourceRun.status,
-          });
-        } else {
-          const targetAgent = await getAgent(targetAgentId);
-          if (!targetAgent)
-            throw conflict("The quota recovery agent is unavailable.");
-          const scheduled = await scheduleBoundedRetryForRun(
-            sourceRun,
-            targetAgent,
-            {
-              now: input.now,
-              ...(isProviderQuotaReviewMonitor
-                ? {
-                    retryReason:
-                      EXECUTION_REVIEW_PARTICIPANT_RECOVERY_RETRY_REASON,
-                    wakeReason:
-                      EXECUTION_REVIEW_PARTICIPANT_RECOVERY_WAKE_REASON,
-                  }
-                : {}),
-            },
-          );
-          if (scheduled.outcome === "not_scheduled")
-            throw conflict(scheduled.reason);
-        }
-      } else {
-        const wake = await enqueueWakeup(targetAgentId, {
-          issueStateGuard: { statuses: [claimed.status], assigneeAgentId: claimed.assigneeAgentId,
-            monitorNextCheckAt: scheduledAtIso, monitorWakeRequestedAt: claimed.monitorWakeRequestedAt!.toISOString() },
-          source: input.source,
-          triggerDetail: input.triggerDetail,
-          reason: wakeReason,
-          idempotencyKey: `issue-monitor:${claimed.id}:${scheduledAtIso}`,
-          payload: {
-            issueId: claimed.id,
-            nextCheckAt: scheduledAtIso,
-            monitorAttemptCount: nextAttemptCount,
-            monitorNotes: claimed.monitorNotes ?? null,
-            ...monitorMetadata,
-            ...reviewRecoveryContext,
-            source: input.activitySource,
-          },
-          requestedByActorType: input.actorType,
-          requestedByActorId: input.actorId,
-          contextSnapshot: {
-            issueId: claimed.id,
-            source: isProviderQuotaReviewMonitor
-              ? "issue.execution_review_recovery"
-              : "issue.monitor",
-            wakeReason,
-            nextCheckAt: scheduledAtIso,
-            monitorAttemptCount: nextAttemptCount,
-            monitorNotes: claimed.monitorNotes ?? null,
-            ...monitorMetadata,
-            ...reviewRecoveryContext,
-            manualTrigger: input.activitySource === "manual",
-          },
-        });
-        if (!wake) {
-          await db.update(issues).set({ monitorWakeRequestedAt: null, updatedAt: input.now })
-            .where(issueMonitorClaimCondition(claimed));
-          return { outcome: "skipped" as const, reason: "monitor_dispatch_deferred" };
-        }
-      }
-
-      const consumed = await db
-        .update(issues)
-        .set({
-          ...monitorOnlyDispatchPatch(buildIssueMonitorTriggeredPatch({
-            issue: claimed,
-            policy,
-            triggeredAt: input.now,
-          })),
-          updatedAt: new Date(),
-        })
-        .where(issueMonitorClaimCondition(claimed))
-        .returning({ id: issues.id });
-      if (consumed.length === 0) return { outcome: "skipped" as const, reason: "monitor_replaced" };
-
-      await logActivity(db, {
-        companyId: claimed.companyId,
-        actorType: input.actorType,
-        actorId: input.actorId,
-        agentId: input.agentId,
-        runId: input.runId,
-        action: "issue.monitor_triggered",
-        entityType: "issue",
-        entityId: claimed.id,
-        details: {
-          identifier: claimed.identifier,
-          nextCheckAt: scheduledAtIso,
-          lastTriggeredAt: input.now.toISOString(),
-          attemptCount: nextAttemptCount,
-          notes: claimed.monitorNotes ?? null,
-          ...monitorMetadata,
-          source: input.activitySource,
-        },
-      });
-
-      return { outcome: "triggered" as const };
-    } catch (err) {
-      if (err instanceof HttpError && err.status >= 400 && err.status < 500) {
-        if (input.clearOnClientError) {
-          await db
-            .update(issues)
-            .set({
-              ...monitorOnlyDispatchPatch(buildIssueMonitorClearedPatch({
-                issue: claimed,
-                policy,
-                clearReason: "dispatch_skipped",
-                clearedAt: input.now,
-              })),
-              updatedAt: new Date(),
-            })
-            .where(issueMonitorClaimCondition(claimed));
-
-          await logActivity(db, {
-            companyId: claimed.companyId,
-            actorType: input.actorType,
-            actorId: input.actorId,
-            agentId: input.agentId,
-            runId: input.runId,
-            action: "issue.monitor_skipped",
-            entityType: "issue",
-            entityId: claimed.id,
-            details: {
-              identifier: claimed.identifier,
-              nextCheckAt: scheduledAtIso,
-              attemptCount: nextAttemptCount,
-              notes: claimed.monitorNotes ?? null,
-              reason: err.message,
-              source: input.activitySource,
-            },
-          });
-
-          return { outcome: "skipped" as const, reason: err.message };
-        }
-
-        await db
-          .update(issues)
-          .set({
-            monitorWakeRequestedAt: null,
-            updatedAt: new Date(),
-          })
-          .where(issueMonitorClaimCondition(claimed));
-      } else {
-        await db
-          .update(issues)
-          .set({
-            monitorWakeRequestedAt: null,
-            updatedAt: new Date(),
-          })
-          .where(issueMonitorClaimCondition(claimed));
-      }
-
-      throw err;
-    }
-  }
-
-  function noActiveNativeMonitorRun() {
-    return sql`not exists (select 1 from ${heartbeatRuns} monitor_run
-      where monitor_run.company_id = ${issues.companyId}
-        and monitor_run.native_issue_id = ${issues.id}
-        and monitor_run.runtime_mode = 'native'
-        and monitor_run.status in ('queued', 'running', 'scheduled_retry'))`;
-  }
-
-  async function triggerIssueMonitor(
-    issueId: string,
-    input?: {
-      now?: Date;
-      actorType?: "user" | "agent" | "system";
-      actorId?: string | null;
-      agentId?: string | null;
-      runId?: string | null;
-      wakeReason?: string;
-    },
-  ) {
-    const now = input?.now ?? new Date();
-    const actorType = input?.actorType ?? "system";
-    const actorId =
-      input?.actorId ?? (actorType === "system" ? "heartbeat_scheduler" : null);
-    if (!actorId) {
-      throw conflict("Issue monitor trigger requires an actor");
-    }
-
-    const issue = await db
-      .select(issueMonitorDispatchColumns)
-      .from(issues)
-      .where(eq(issues.id, issueId))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-    if (!issue) {
-      throw notFound("Issue not found");
-    }
-    if (!issue.monitorNextCheckAt) {
-      throw conflict("Issue has no scheduled monitor");
-    }
-    if (!issue.assigneeAgentId || issue.assigneeUserId) {
-      throw conflict("Issue monitor requires an agent assignee");
-    }
-    if (!["in_progress", "in_review"].includes(issue.status)) {
-      throw conflict(
-        "Issue monitor can only run while the issue is in progress or in review",
-      );
-    }
-
-    const staleClaimThreshold = new Date(now.getTime() - 5 * 60 * 1000);
-    const claimed = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(issues)
-        .set({
-          monitorWakeRequestedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(issues.id, issueId),
-            sql`${issues.monitorNextCheckAt} is not null`,
-            isNull(issues.assigneeUserId),
-            sql`${issues.assigneeAgentId} is not null`,
-            inArray(issues.status, ["in_progress", "in_review"]),
-            or(
-              isNull(issues.monitorWakeRequestedAt),
-              lt(issues.monitorWakeRequestedAt, staleClaimThreshold),
-            ),
-          ),
-        )
-        .returning();
-      return (updated ?? null) as IssueMonitorDispatchRow | null;
-    });
-
-    if (!claimed) {
-      throw conflict("Issue monitor check is already in progress");
-    }
-
-    return dispatchClaimedIssueMonitor(claimed, {
-      now,
-      source: "on_demand",
-      triggerDetail: "manual",
-      wakeReason: input?.wakeReason ?? "issue_monitor_due",
-      actorType,
-      actorId,
-      agentId: input?.agentId ?? null,
-      runId: input?.runId ?? null,
-      clearOnClientError: false,
-      activitySource: "manual",
-    });
-  }
-
-  async function tickDueIssueMonitors(now = new Date()) {
-    const staleClaimThreshold = new Date(now.getTime() - 5 * 60 * 1000);
-    const dueMonitors = await db
-      .select(issueMonitorDispatchColumns)
-      .from(issues)
-      .innerJoin(companies, eq(companies.id, issues.companyId))
-      .where(
-        and(
-          eq(companies.status, "active"),
-          noActiveNativeMonitorRun(),
-          sql`${issues.monitorNextCheckAt} is not null`,
-          lte(issues.monitorNextCheckAt, now),
-          isNull(issues.assigneeUserId),
-          sql`${issues.assigneeAgentId} is not null`,
-          inArray(issues.status, ["in_progress", "in_review"]),
-          or(
-            isNull(issues.monitorWakeRequestedAt),
-            lt(issues.monitorWakeRequestedAt, staleClaimThreshold),
-          ),
-        ),
-      )
-      .orderBy(asc(issues.monitorNextCheckAt), asc(issues.updatedAt))
-      .limit(50);
-
-    let triggered = 0;
-    let skipped = 0;
-
-    for (const due of dueMonitors) {
-      const claimed = await db.transaction(async (tx) => {
-        const [updated] = await tx
-          .update(issues)
-          .set({
-            monitorWakeRequestedAt: now,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(issues.id, due.id),
-              noActiveNativeMonitorRun(),
-              sql`${issues.monitorNextCheckAt} is not null`,
-              lte(issues.monitorNextCheckAt, now),
-              isNull(issues.assigneeUserId),
-              sql`${issues.assigneeAgentId} is not null`,
-              inArray(issues.status, ["in_progress", "in_review"]),
-              or(
-                isNull(issues.monitorWakeRequestedAt),
-                lt(issues.monitorWakeRequestedAt, staleClaimThreshold),
-              ),
-            ),
-          )
-          .returning();
-        return (updated ?? null) as IssueMonitorDispatchRow | null;
-      });
-
-      if (!claimed) continue;
-
-      try {
-        const result = await dispatchClaimedIssueMonitor(claimed, {
-          now,
-          source: "automation",
-          triggerDetail: "system",
-          wakeReason: "issue_monitor_due",
-          actorType: "system",
-          actorId: "heartbeat_scheduler",
-          agentId: null,
-          runId: null,
-          clearOnClientError: true,
-          activitySource: "scheduled",
-        });
-        if (result.outcome === "triggered") triggered += 1;
-        if (result.outcome === "skipped") skipped += 1;
-      } catch (err) {
-        logger.error({ err, issueId: claimed.id }, "issue monitor tick failed");
-      }
-    }
-
-    return {
-      checked: dueMonitors.length,
-      triggered,
-      skipped,
-    };
-  }
+  const {
+    triggerIssueMonitor,
+    tickTimers,
+    recoverActiveSessionGoals,
+    recoverPendingSessionGoalActions,
+  } = createHeartbeatScheduling(db, {
+    issuesSvc,
+    enqueueWakeup,
+    getRun,
+    getAgent,
+    scheduleBoundedRetryForRun,
+    getSchedulingSuppression,
+    getWorktreeExecutionCutoff,
+    toAgentOrgRow,
+    groupAgentOrgRowsByCompany,
+    parseHeartbeatPolicy,
+    claimDueTimerHeartbeat,
+  });
 
   const {
     resolveReusedGitWorkspaceAnchor,
@@ -3076,167 +1764,6 @@ export function heartbeatService(
         },
       });
     }
-  }
-
-  async function recoverActiveSessionGoals() {
-    if ((await getSchedulingSuppression()).suppressed) {
-      return { scanned: 0, enqueued: 0 };
-    }
-    const sessions = await db
-      .select({
-        id: agentTaskSessions.id,
-        companyId: agentTaskSessions.companyId,
-        agentId: agentTaskSessions.agentId,
-        issueId: agentTaskSessions.taskKey,
-        revision: agentTaskSessions.goalRevision,
-      })
-      .from(agentTaskSessions)
-      .innerJoin(
-        issues,
-        and(
-          sql`${issues.id}::text = ${agentTaskSessions.taskKey}`,
-          eq(issues.companyId, agentTaskSessions.companyId),
-          eq(issues.assigneeAgentId, agentTaskSessions.agentId),
-        ),
-      )
-      .where(
-        and(
-          eq(agentTaskSessions.goalDesiredState, "active"),
-          eq(agentTaskSessions.goalStatus, "active"),
-          notInArray(issues.status, ["done", "cancelled"]),
-        ),
-      );
-    let enqueued = 0;
-    for (const session of sessions) {
-      const run = await enqueueWakeup(session.agentId, {
-        source: "automation",
-        triggerDetail: "system",
-        reason: "goal_control",
-        payload: { issueId: session.issueId, intent: "goal_recovery" },
-        idempotencyKey: `goal_recovery:${session.id}:${session.revision}`,
-        requestedByActorType: "system",
-        contextSnapshot: {
-          issueId: session.issueId,
-          taskKey: session.issueId,
-          resumeSessionGoalHeartbeat: true,
-          skipIssueComment: true,
-        },
-      });
-      if (run) enqueued += 1;
-    }
-    return { scanned: sessions.length, enqueued };
-  }
-
-  async function recoverPendingSessionGoalActions() {
-    if ((await getSchedulingSuppression()).suppressed) {
-      return { scanned: 0, enqueued: 0, alreadyQueued: 0, invalid: 0 };
-    }
-    const pending = await db
-      .select({
-        id: agentSessionGoalActions.id,
-        requestId: agentSessionGoalActions.requestId,
-        payload: agentSessionGoalActions.payloadJson,
-        companyId: agentTaskSessions.companyId,
-        agentId: agentTaskSessions.agentId,
-        adapterType: agentTaskSessions.adapterType,
-        issueId: agentTaskSessions.taskKey,
-      })
-      .from(agentSessionGoalActions)
-      .innerJoin(
-        agentTaskSessions,
-        eq(agentTaskSessions.id, agentSessionGoalActions.sessionId),
-      )
-      .innerJoin(
-        issues,
-        and(
-          sql`${issues.id}::text = ${agentTaskSessions.taskKey}`,
-          eq(issues.companyId, agentTaskSessions.companyId),
-          eq(issues.assigneeAgentId, agentTaskSessions.agentId),
-        ),
-      )
-      .where(
-        inArray(agentSessionGoalActions.status, [
-          "pending",
-          "delivering",
-          "delivered",
-        ]),
-      )
-      .orderBy(asc(agentSessionGoalActions.createdAt));
-
-    let enqueued = 0;
-    let alreadyQueued = 0;
-    let invalid = 0;
-    for (const action of pending) {
-      const control = parseNativeSessionGoalControl(action.payload);
-      if (!control || control.requestId !== action.requestId) {
-        invalid += 1;
-        await failRunnerGoalAction(
-          db,
-          {
-            companyId: action.companyId,
-            issueId: action.issueId,
-            agentId: action.agentId,
-            adapterType: action.adapterType,
-          },
-          action.requestId,
-          "session_goal_control_payload_invalid",
-        ).catch(() => undefined);
-        continue;
-      }
-
-      const inFlight = await db
-        .select({ contextSnapshot: heartbeatRuns.contextSnapshot })
-        .from(heartbeatRuns)
-        .where(
-          and(
-            eq(heartbeatRuns.companyId, action.companyId),
-            eq(heartbeatRuns.agentId, action.agentId),
-            inArray(heartbeatRuns.status, [
-              "queued",
-              "scheduled_retry",
-              "running",
-            ]),
-          ),
-        )
-        .then((runs) =>
-          runs.some(
-            (run) =>
-              readNonEmptyString(
-                parseObject(run.contextSnapshot).goalControlRequestId,
-              ) === action.requestId,
-          ),
-        );
-      if (inFlight) {
-        alreadyQueued += 1;
-        continue;
-      }
-
-      const run = await enqueueWakeup(action.agentId, {
-        source: "automation",
-        triggerDetail: "system",
-        reason: "goal_control",
-        payload: {
-          issueId: action.issueId,
-          requestId: action.requestId,
-          intent: "goal_control_recovery",
-        },
-        idempotencyKey: `goal_control_recovery:${action.id}`,
-        requestedByActorType: "system",
-        contextSnapshot: {
-          issueId: action.issueId,
-          taskKey: action.issueId,
-          // Goal controls reconcile the provider session itself and remain
-          // valid after issue terminalization (for example, clearing a
-          // completed goal from its retained widget).
-          resumeIntent: true,
-          goalControlRequestId: action.requestId,
-          runnerGoalControl: control,
-          skipIssueComment: true,
-        },
-      });
-      if (run) enqueued += 1;
-    }
-    return { scanned: pending.length, enqueued, alreadyQueued, invalid };
   }
 
   async function reconcileStrandedAssignedIssues() {
@@ -3380,6 +1907,43 @@ export function heartbeatService(
     timer.unref?.();
     nativeSessionResumeDispatchTimers.set(runId, timer);
   }
+
+  const runCompletion = createHeartbeatRunCompletion(db, {
+    getRun,
+    getAgent,
+    resolveNormalizedUsageForSession,
+    clearTaskSessions,
+    upsertTaskSession,
+    mergeRunStopMetadataForAgent,
+    setRunStatusIfRunning,
+    setWakeupStatus,
+    appendRunEvent,
+    classifyAndPersistRunLiveness,
+    completeSkillTestRunForHeartbeatOutcome,
+    refreshContinuationSummaryForRun,
+    findRunIssueComment,
+    findLatestCompletedFinalAgentMessage,
+    parseMaxTurnContinuationPolicy,
+    finalizeIssueCommentPolicy,
+    handleIssueReviewPathDisposition,
+    handleRunLivenessContinuation,
+    handleSuccessfulRunHandoff,
+    updateRuntimeState,
+    scheduleBoundedRetryForRun,
+    scheduleInteractionContinuationInfrastructureRetryIfEligible,
+    timerClaimWasFirstHeartbeat,
+    releaseIssueExecutionAndPromote,
+    finalizeAgentStatus,
+    enqueueWakeup,
+    issuesSvc,
+    recovery,
+    getCurrentUserRedactionOptions,
+    budgetHooks,
+    runLogStore,
+    traceStore,
+    processRunCancellationSettlements,
+    failedProcessRunCancellations,
+  });
 
   async function executeRun(
     runId: string,
@@ -4241,7 +2805,7 @@ export function heartbeatService(
             ? [
                 {
                   id: comment.id,
-                  body: comment.body,
+                  body: fastResponseHistoryBody({ body: comment.body, origin: typeof comment.origin === "string" ? comment.origin : null }),
                   attachments: Array.isArray(comment.attachments)
                     ? comment.attachments.flatMap((attachment) => {
                         const descriptor = parseObject(attachment);
@@ -4279,6 +2843,9 @@ export function heartbeatService(
       );
       // Always replace caller-supplied context with the immutable, company-scoped
       // conversation snapshot. It belongs only to the endpoint's assigned agent.
+      const liveVoiceGuidance = issueContext?.chatAssignedAgentId === agent.id && issueContext.chatProvider === "speko"
+        ? await liveVoiceExecutionGuidance(db, { companyId: agent.companyId, issueId: issueContext.id, agentId: agent.id })
+        : null;
       context.paperclipTaskCommunicationGuidance =
         issueContext?.chatAssignedAgentId === agent.id
           ? issueContext.chatCommunicationGuidance
@@ -4347,18 +2914,21 @@ export function heartbeatService(
             exposeLowTrustRaw,
           })
         : null;
-      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan }) + chatCompletionInstruction(context);
-      let taskMarkdownAssignment = buildPaperclipTaskMarkdown({
+      // Unlike the frozen initial communication preferences, live-call context
+      // must also reach resumed turns. Rebuild it from server records each wake.
+      const liveVoiceTaskPrefix = liveVoiceGuidance ? `${liveVoiceGuidance}\n\n` : "";
+      let taskMarkdown = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan }) + chatCompletionInstruction(context);
+      let taskMarkdownAssignment = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
         includeWakeComments: false,
       }) + chatCompletionInstruction(context);
-      const taskMarkdownCompact = buildPaperclipTaskMarkdown({
+      const taskMarkdownCompact = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
         includeDescription: false,
       }) + chatCompletionInstruction(context);
-      const taskMarkdownAssignmentCompact = buildPaperclipTaskMarkdown({
+      const taskMarkdownAssignmentCompact = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
         includeDescription: false,
@@ -4400,6 +2970,7 @@ export function heartbeatService(
       } else {
         delete context.paperclipTaskMarkdownAssignmentCompact;
       }
+      context.paperclipTaskCommunicationGuidance = [context.paperclipTaskCommunicationGuidance, FAST_RESPONSE_AGENT_GUIDANCE].filter(Boolean).join("\n\n");
       if (issueRef) {
         const redactedWakeContext = await createRunSecretRedactionRegistry(
           db,
@@ -4524,6 +3095,8 @@ export function heartbeatService(
         ? await environmentsSvc.findManagedSandboxEnvironment(agent.companyId)
         : null;
       const environmentResolution = resolveExecutionWorkspaceEnvironmentId({
+        lowTrustIssueEnvironmentId: trustPreset.kind === "low_trust_review"
+          ? parseIssueExecutionWorkspaceSettings(issueContext?.executionWorkspaceSettings, {includeEnvironmentId: true})?.environmentId : null,
         agentDefaultEnvironmentId: agent.defaultEnvironmentId,
         instanceDefaultEnvironmentId:
           resolvedInstanceSettings.defaultEnvironmentId ?? null,
@@ -4789,6 +3362,7 @@ export function heartbeatService(
           db,
           companyId: agent.companyId,
           issueId,
+          commentIds: extractWakeCommentIds(context),
         });
       const runScopedSkillKeys =
         acceptedPlanContinuationWake &&
@@ -4858,6 +3432,8 @@ export function heartbeatService(
             configurationIncomplete: { reason: "ai_connection_unavailable", companyId: agent.companyId, agentId: agent.id, responsibleUserId,
               ...(!persistedNativeExecutionInput && readAiConnectionConfigurationFailure(error)
                 ? { selectionFailure: readAiConnectionConfigurationFailure(error) } : {}),
+              ...(readAiCredentialAccessFailure(error)
+                ? { credentialAccess: readAiCredentialAccessFailure(error) } : {}),
               provider: aiBinding.provider, method: aiBinding.method, actionUrl: `/agents/${agent.id}/runtime`,
               fingerprint: `ai:${agent.id}:${responsibleUserId}:${JSON.stringify(aiBinding)}` },
           });
@@ -5082,859 +3658,78 @@ export function heartbeatService(
         if (handoff) context.paperclipFreshSessionHandoffMarkdown = handoff;
       }
       const {
-        selectedEnvironmentDriver: lowTrustPreflightEnvironmentDriver,
-        workspace: resolvedWorkspace,
-      } = await resolveWorkspaceAfterLowTrustPreflight({
-        db,
-        trustPreset,
-        isolatedWorkspacesEnabled,
-        effectiveExecutionWorkspaceMode,
-        issue: issueRef
-          ? {
-              companyId: agent.companyId,
-              id: issueRef.id,
-              projectId: issueRef.projectId,
-            }
-          : null,
-        resolveSelectedEnvironmentDriver: async () => {
-          const preflightEnvironment = await envOrchestrator.resolveEnvironment(
-            {
-              companyId: agent.companyId,
-              selectedEnvironmentId,
-              localEnvironmentId: localEnvironment.id,
-            },
-          );
-          return preflightEnvironment.driver;
-        },
-        resolveWorkspace: async () => {
-          if (isDotRun) {
-            // This is private controller storage, never a provider filesystem.
-            // v6 projects workspace.access=none and cwd=null to Dot.
-            const cwd = path.resolve(resolvePaperclipInstanceRoot(), "runtime", "paperclip-runner", "dot-controllers", agent.companyId, run.id);
-            await fs.mkdir(cwd, { recursive: true, mode: 0o700 });
-            return { cwd, source: "agent_home" as const, projectId: null, workspaceId: null, repoUrl: null, repoRef: null,
-              workspaceHints: [], warnings: [], baseCwdFallback: false, materializationFailures: [], additionalWorkspaces: [], referencedProjectFailures: [] };
-          }
-          if (useIsolatedTaskDirectory && issueRef) {
-            const cwd = await materializeIsolatedTaskDirectory({
-              companyId: agent.companyId,
-              issueId: issueRef.id,
-            });
-            if (reusableExistingExecutionWorkspace && (
-              reusableExistingExecutionWorkspace.companyId !== agent.companyId ||
-              reusableExistingExecutionWorkspace.projectId !== issueRef.projectId ||
-              reusableExistingExecutionWorkspace.sourceIssueId !== issueRef.id ||
-              reusableExistingExecutionWorkspace.mode !== "isolated_workspace" ||
-              reusableExistingExecutionWorkspace.strategyType !== "project_primary" ||
-              reusableExistingExecutionWorkspace.cwd !== cwd
-            )) {
-              throw new WorkspaceValidationFailure("The existing execution workspace is not this task's isolated directory.", {
-                workspaceValidation: { reason: "isolated_task_directory_binding_mismatch", issueId: issueRef.id },
-              });
-            }
-            return resolveWorkspaceForRun(agent, context, previousSessionParams, {
-              executionEnvironmentDriver: selectedEnvironmentForConfig?.driver ?? null,
-              anchorWorkspace: {
-                cwd,
-                source: "task_session",
-                projectId: issueRef.projectId,
-                workspaceId: null,
-                repoUrl: null,
-                repoRef: null,
-                workspaceHints: [],
-                warnings: [],
-                baseCwdFallback: false,
-                materializationFailures: [],
-              },
-            });
-          }
-          if (nativeChatWorkspaceScope && !nativeChatWorkspaceScope.projectId) {
-            const cwd = await materializeNativeChatTaskRoot(
-              nativeChatWorkspaceScope,
-            );
-            return {
-              cwd,
-              source: "task_session" as const,
-              projectId: null,
-              workspaceId: null,
-              repoUrl: null,
-              repoRef: null,
-              workspaceHints: [],
-              warnings: [],
-              baseCwdFallback: false,
-              materializationFailures: [],
-              additionalWorkspaces: [],
-              referencedProjectFailures: [],
-            };
-          }
-          const workspace = await resolveWorkspaceForRun(
-            agent,
-            context,
-            previousSessionParams,
-            {
-              useProjectWorkspace:
-                requestedExecutionWorkspaceMode !== "agent_default",
-              anchorWorkspace: requestedShouldReuseExisting && reusableExistingExecutionWorkspace?.strategyType === "git_worktree"
-                ? await resolveReusedGitWorkspaceAnchor({
-                    agent,
-                    workspace: reusableExistingExecutionWorkspace,
-                    responsibleUserId,
-                    immutableNativeBinding: Boolean(nativeRecoveryExecutionWorkspaceId),
-                    projectId: nativeRecoveryExecutionWorkspaceId
-                      ? reusableExistingExecutionWorkspace.projectId
-                      : issueRef?.projectId ?? readNonEmptyString(context.projectId),
-                    explicitProjectWorkspaceId: nativeRecoveryExecutionWorkspaceId
-                      ? reusableExistingExecutionWorkspace.projectWorkspaceId
-                      : readNonEmptyString(context.projectWorkspaceId),
-                    issueId,
-                    runId: run.id,
-                  })
-                : undefined,
-              // Thread the selected environment driver so run-workspace resolution can tell a local
-              // target from a remote one, and a confined sandbox target from an unconfined remote
-              // target. A remote run resolves referenced projects only for the confined sandbox
-              // transport with the remote flag on. This never changes the anchor workspace.
-              executionEnvironmentDriver:
-                selectedEnvironmentForConfig?.driver ?? null,
-            },
-          );
-          // Additional referenced projects are a separate trusted Board
-          // capability, not extra readable roots for an external conversation.
-          return nativeChatWorkspaceScope
-            ? {
-                ...workspace,
-                additionalWorkspaces: [],
-                referencedProjectFailures: [],
-              }
-            : workspace;
-        },
-      });
-      const hostExecutionWorkspaceConfig = isDotRun ? {} :
-        stripHostWorkspaceProvisionForLowTrustSandbox({
-          config: mergedConfig,
-          trustPreset,
-          selectedEnvironmentDriver: lowTrustPreflightEnvironmentDriver,
-        });
-      const executionWorkspaceBase = {
-        baseCwd: resolvedWorkspace.cwd,
-        source: resolvedWorkspace.source,
-        projectId: resolvedWorkspace.projectId,
-        workspaceId: resolvedWorkspace.workspaceId,
-        repoUrl: resolvedWorkspace.repoUrl,
-        repoRef: resolvedWorkspace.repoRef,
-        additionalWorkspaces: resolvedWorkspace.additionalWorkspaces,
-      } satisfies ExecutionWorkspaceInput;
-      await assertGitWorktreeBaseWorkspaceReady({
-        requestedExecutionWorkspaceMode,
-        config: hostExecutionWorkspaceConfig,
-        issue: issueRef,
-        base: executionWorkspaceBase,
-        anchor: {
-          baseCwdFallback: resolvedWorkspace.baseCwdFallback,
-          materializationFailures: resolvedWorkspace.materializationFailures,
-          localPathOnlyWorkspace: resolvedWorkspace.localPathOnlyWorkspace,
-        },
-      });
-      const workspaceStrategyForFingerprint = parseObject(
-        hostExecutionWorkspaceConfig.workspaceStrategy,
-      );
-      const workspaceStrategyFingerprintValue =
-        Object.keys(workspaceStrategyForFingerprint).length > 0
-          ? workspaceStrategyForFingerprint
-          : null;
-      const latestWorkspaceStrategyType = resolveEffectiveWorkspaceStrategyType(
-        requestedExecutionWorkspaceMode,
+        resolvedWorkspace,
         hostExecutionWorkspaceConfig,
-      );
-      const selectedEnvironmentConfigForFingerprint = parseObject(
-        selectedEnvironmentForConfig?.config,
-      );
-      const workspaceEnvironmentFingerprint = selectedEnvironmentForConfig
-        ? {
-            selectionSource: environmentResolution.source,
-            selectedEnvironmentId,
-            driver: selectedEnvironmentForConfig.driver,
-            provider: readNonEmptyString(
-              selectedEnvironmentConfigForFingerprint.provider,
-            ),
-            config: selectedEnvironmentForConfig.config,
-            configRevisionAt:
-              selectedEnvironmentForConfig.updatedAt instanceof Date
-                ? selectedEnvironmentForConfig.updatedAt.toISOString()
-                : (selectedEnvironmentForConfig.updatedAt ?? null),
-            executionPolicy,
-          }
-        : null;
-      const workspaceRealizationFingerprint = {
-        environmentDriver: selectedEnvironmentForConfig?.driver ?? null,
-        environmentProvider: readNonEmptyString(
-          selectedEnvironmentConfigForFingerprint.provider,
-        ),
-        trustPreset: trustPreset.kind,
-        lowTrustSandboxDriver: lowTrustPreflightEnvironmentDriver,
-      };
-      const workspaceFreshnessSource = resolvedWorkspace.freshnessSource ?? executionWorkspaceBase;
-      const latestWorkspaceConfigMetadata =
-        buildEffectiveRunWorkspaceConfigMetadata({
-          mode: requestedExecutionWorkspaceMode,
-          projectId: workspaceFreshnessSource.projectId,
-          projectWorkspaceId: workspaceFreshnessSource.workspaceId,
-          strategyType: latestWorkspaceStrategyType,
-          workspaceStrategy: workspaceStrategyFingerprintValue,
-          repoUrl: workspaceFreshnessSource.repoUrl,
-          repoRef:
-            readNonEmptyString(workspaceStrategyForFingerprint.baseRef) ??
-            workspaceFreshnessSource.repoRef,
-          configSnapshot,
-          environment: workspaceEnvironmentFingerprint,
-          realization: workspaceRealizationFingerprint,
-          secretManifest,
-        });
-      const inferredExistingWorkspaceConfigMetadata =
-        reusableExistingExecutionWorkspace
-          ? buildEffectiveRunWorkspaceConfigMetadata({
-              mode: issueExecutionWorkspaceModeForPersistedWorkspace(
-                reusableExistingExecutionWorkspace.mode,
-              ),
-              projectId: reusableExistingExecutionWorkspace.projectId,
-              projectWorkspaceId:
-                reusableExistingExecutionWorkspace.projectWorkspaceId,
-              strategyType: reusableExistingExecutionWorkspace.strategyType,
-              workspaceStrategy: workspaceStrategyFingerprintValue
-                ? {
-                    ...workspaceStrategyFingerprintValue,
-                    type: reusableExistingExecutionWorkspace.strategyType,
-                    ...(reusableExistingExecutionWorkspace.baseRef
-                      ? { baseRef: reusableExistingExecutionWorkspace.baseRef }
-                      : {}),
-                  }
-                : { type: reusableExistingExecutionWorkspace.strategyType },
-              repoUrl: reusableExistingExecutionWorkspace.repoUrl,
-              repoRef: reusableExistingExecutionWorkspace.baseRef,
-              configSnapshot: reusableExistingExecutionWorkspace.config,
-              environment: workspaceEnvironmentFingerprint,
-              realization: workspaceRealizationFingerprint,
-              secretManifest,
-              evaluatedAt: latestWorkspaceConfigMetadata.evaluatedAt,
-            })
-          : null;
-      const workspaceConfigFreshness = resolveExecutionWorkspaceConfigFreshness(
-        {
-          hasExistingWorkspace:
-            requestedShouldReuseExisting &&
-            Boolean(reusableExistingExecutionWorkspace),
-          existingWorkspaceMetadata:
-            reusableExistingExecutionWorkspace?.metadata ?? null,
-          inferredMetadata: inferredExistingWorkspaceConfigMetadata,
-          nextMetadata: latestWorkspaceConfigMetadata,
-        },
-      );
-      const workspaceReuseProvisioningPolicy =
-        resolveExecutionWorkspaceReuseProvisioningPolicy({
-          requestedShouldReuseExisting,
-          workspaceConfigFreshness,
-        });
-      const workspaceOperationRecorder = workspaceOperationsSvc.createRecorder({
-        companyId: agent.companyId,
-        heartbeatRunId: run.id,
-        executionWorkspaceId:
-          workspaceReuseProvisioningPolicy.shouldRestoreExistingWorkspace
-            ? workspaceReuseRequest.requestedExecutionWorkspaceId
-            : null,
-        issueId,
-      });
-      // The run-scoped provider resolves the active identity at each Git operation,
-      // including base-ref refreshes, workspace realization, and restore.
-      const workspaceGitAuthProvider = createGitRemoteAuthProvider(
-        db,
-        agent.companyId,
-        {
-          issueId,
-          heartbeatRunId: run.id,
-          responsibleUserId: run.responsibleUserId,
-          agentId: agent.id,
-        },
-      );
-      const {
+        latestWorkspaceConfigMetadata,
+        workspaceConfigFreshness,
+        workspaceOperationRecorder,
         executionWorkspace,
         reusedExecutionWorkspace,
-        policy: resolvedWorkspaceReusePolicy,
-      } = isDotRun ? { executionWorkspace: { ...executionWorkspaceBase, strategy: "project_primary" as const, cwd: resolvedWorkspace.cwd, branchName: null, worktreePath: null, warnings: [], created: false, branchCreatedByRuntime: false } as RealizedExecutionWorkspace, reusedExecutionWorkspace: false, policy: workspaceReuseProvisioningPolicy } : await provisionExecutionWorkspaceForFreshnessDecision<RealizedExecutionWorkspace>(
-        {
-          requestedShouldReuseExisting,
-          existingExecutionWorkspaceId:
-            workspaceReuseRequest.requestedExecutionWorkspaceId,
+        resolvedWorkspaceReusePolicy,
+        persistedExecutionWorkspace,
+        projectRepositoryPaths,
+        environmentAcquireStartedAtMs,
+        selectedEnvironment,
+        activeEnvironmentLease,
+        realizationResult,
+        environmentRealizeEndedAtMs,
+        workspaceRealization,
+        executionTarget,
+        workspaceRestoreSource,
+      } = await prepareHeartbeatWorkspace(db, {
+        run, agent, controllerLease, nativeRunnerPreparationSpans,
+        task: {
           issueRef,
-          runId: run.id,
-          workspaceConfigFreshness,
-          restoreExistingWorkspace: reusableExistingExecutionWorkspace
-            ? () =>
-                ensurePersistedExecutionWorkspaceAvailable({
-                  db,
-                  base: executionWorkspaceBase,
-                  workspace: {
-                    id: reusableExistingExecutionWorkspace.id,
-                    mode: reusableExistingExecutionWorkspace.mode,
-                    strategyType:
-                      reusableExistingExecutionWorkspace.strategyType,
-                    cwd: reusableExistingExecutionWorkspace.cwd,
-                    providerRef: reusableExistingExecutionWorkspace.providerRef,
-                    projectId: reusableExistingExecutionWorkspace.projectId,
-                    projectWorkspaceId:
-                      reusableExistingExecutionWorkspace.projectWorkspaceId,
-                    repoUrl: reusableExistingExecutionWorkspace.repoUrl,
-                    baseRef: reusableExistingExecutionWorkspace.baseRef,
-                    branchName: reusableExistingExecutionWorkspace.branchName,
-                    metadata:
-                      reusableExistingExecutionWorkspace.metadata as Record<
-                        string,
-                        unknown
-                      > | null,
-                    config: {
-                      provisionCommand:
-                        configSnapshot?.provisionCommand ??
-                        reusableExistingExecutionWorkspace.config
-                          ?.provisionCommand ??
-                        projectExecutionWorkspacePolicy?.workspaceStrategy
-                          ?.provisionCommand ??
-                        null,
-                      runtimeProvisionCommand:
-                        configSnapshot?.runtimeProvisionCommand ??
-                        reusableExistingExecutionWorkspace.config
-                          ?.runtimeProvisionCommand ??
-                        projectExecutionWorkspacePolicy?.workspaceStrategy
-                          ?.runtimeProvisionCommand ??
-                        null,
-                    },
-                  },
-                  issue: issueRef,
-                  agent: {
-                    id: agent.id,
-                    name: agent.name,
-                    companyId: agent.companyId,
-                  },
-                  heartbeatRunId: run.id,
-                  enableWorkspaceBranchReconcileForward:
-                    resolvedInstanceSettings.experimental
-                      .enableWorkspaceBranchReconcileForward,
-                  enableWorkspaceDirtyQuarantineRepair:
-                    resolvedInstanceSettings.experimental
-                      .enableWorkspaceDirtyQuarantineRepair,
-                  recorder: workspaceOperationRecorder,
-                  resolveGitAuth: workspaceGitAuthProvider,
-                })
-            : null,
-          realizeWorkspace: () =>
-            realizeExecutionWorkspace({
-              db,
-              base: executionWorkspaceBase,
-              config: hostExecutionWorkspaceConfig,
-              issue: issueRef,
-              agent: {
-                id: agent.id,
-                name: agent.name,
-                companyId: agent.companyId,
-              },
-              recordedBranchOwnership:
-                existingExecutionWorkspace?.status !== "archived" &&
-                existingExecutionWorkspace?.branchName
-                  ? {
-                      branchName: existingExecutionWorkspace.branchName,
-                      createdByRuntime: isRuntimeOwnedGitBranch(
-                        existingExecutionWorkspace.metadata,
-                      ),
-                    }
-                  : null,
-              heartbeatRunId: run.id,
-              enableWorkspaceBranchReconcileForward:
-                resolvedInstanceSettings.experimental
-                  .enableWorkspaceBranchReconcileForward,
-              enableWorkspaceDirtyQuarantineRepair:
-                resolvedInstanceSettings.experimental
-                  .enableWorkspaceDirtyQuarantineRepair,
-              recorder: workspaceOperationRecorder,
-              resolveGitAuth: workspaceGitAuthProvider,
-            }),
+          issueId,
+          context,
+          executionProjectId,
+          responsibleUserId,
+          previousSessionParams,
         },
-      );
-      const resolvedProjectId =
-        executionWorkspace.projectId ??
-        issueRef?.projectId ??
-        executionProjectId ??
-        null;
-      const resolvedProjectWorkspaceId =
-        resolvedWorkspaceReusePolicy.shouldRestoreExistingWorkspace && reusableExistingExecutionWorkspace?.strategyType === "git_worktree"
-          ? reusableExistingExecutionWorkspace.projectWorkspaceId
-          : issueRef?.projectWorkspaceId ?? resolvedWorkspace.workspaceId ?? null;
-      let persistedExecutionWorkspace: ExecutionWorkspace | null = null;
-      let issueExecutionWorkspaceIdForRun =
-        issueRef?.executionWorkspaceId ?? null;
-      let issueProjectWorkspaceIdForRun = issueRef?.projectWorkspaceId ?? null;
-      let issueExecutionWorkspacePreferenceForRun =
-        issueRef?.executionWorkspacePreference ?? null;
-      let issueExecutionWorkspaceModeForRun =
-        issueExecutionWorkspaceSettings?.mode ?? null;
-      const warmReusableExecutionWorkspace =
-        selectedEnvironmentForConfig?.driver === "sandbox" &&
-        selectedEnvironmentConfigForFingerprint.reuseLease === true &&
-        selectedEnvironmentConfigForFingerprint.runnerLifecycleMode === "warm";
-      // Native provider checkpoints bind to the workspace row, including ordinary
-      // local shared workspaces. Persist that binding independently of the opt-in
-      // isolated-workspace UI, just as warm sandbox continuity already does.
-      const nativeSharedWorkspace = agent.adapterType === "paperclip_runner" &&
-        requestedExecutionWorkspaceMode === "shared_workspace";
-      const bindIssueToPersistedExecutionWorkspace = async (
-        workspace: ExecutionWorkspace | null,
-      ) => {
-        if (!issueId || !workspace || nativeRecoveryExecutionWorkspaceId) {
-          return;
-        }
-        const nextIssueWorkspaceMode =
-          issueExecutionWorkspaceModeForPersistedWorkspace(workspace.mode) ??
-          "agent_default";
-        const shouldSwitchIssueToExistingWorkspace =
-          issueRef?.executionWorkspacePreference === "reuse_existing" ||
-          requestedExecutionWorkspaceMode === "isolated_workspace" ||
-          requestedExecutionWorkspaceMode === "operator_branch" ||
-          warmReusableExecutionWorkspace || nativeSharedWorkspace;
-        const nextIssuePatch: Record<string, unknown> = {};
-        if (issueExecutionWorkspaceIdForRun !== workspace.id) {
-          nextIssuePatch.executionWorkspaceId = workspace.id;
-        }
-        if (
-          resolvedProjectWorkspaceId &&
-          issueProjectWorkspaceIdForRun !== resolvedProjectWorkspaceId
-        ) {
-          nextIssuePatch.projectWorkspaceId = resolvedProjectWorkspaceId;
-        }
-        if (
-          shouldSwitchIssueToExistingWorkspace &&
-          (issueExecutionWorkspacePreferenceForRun !== "reuse_existing" ||
-            issueExecutionWorkspaceModeForRun !== nextIssueWorkspaceMode)
-        ) {
-          nextIssuePatch.executionWorkspacePreference = "reuse_existing";
-          nextIssuePatch.executionWorkspaceSettings = {
-            ...(issueExecutionWorkspaceSettings ?? {}),
-            mode: nextIssueWorkspaceMode,
-          };
-        }
-        if (Object.keys(nextIssuePatch).length > 0) {
-          await issuesSvc.update(
-            issueId,
-            { ...nextIssuePatch, companyGuard: agent.companyId },
-            db,
-            undefined,
-            undefined,
-            { bindRuntimeSharedWorkspace: (warmReusableExecutionWorkspace || nativeSharedWorkspace) && workspace.mode === "shared_workspace" },
-          );
-          issueExecutionWorkspaceIdForRun = workspace.id;
-          issueProjectWorkspaceIdForRun =
-            resolvedProjectWorkspaceId ?? issueProjectWorkspaceIdForRun;
-          if (shouldSwitchIssueToExistingWorkspace) {
-            issueExecutionWorkspacePreferenceForRun = "reuse_existing";
-            issueExecutionWorkspaceModeForRun = nextIssueWorkspaceMode;
-          }
-        }
-      };
-      const baseExecutionWorkspaceMetadata =
-        mergeExecutionWorkspaceMetadataForPersistence({
-          existingMetadata:
-            resolvedWorkspaceReusePolicy.shouldRestoreExistingWorkspace
-              ? (reusableExistingExecutionWorkspace?.metadata ?? null)
-              : null,
-          source: executionWorkspace.source,
-          // Attaching a new worktree to a pre-existing branch reports a fresh
-          // workspace, but must not make cleanup own the operator's branch.
-          createdByRuntime:
-            resolveExecutionWorkspaceBranchOwnership(executionWorkspace),
-          strategyType: executionWorkspace.strategy,
-          configSnapshot,
-          shouldReuseExisting:
-            resolvedWorkspaceReusePolicy.shouldRestoreExistingWorkspace,
-          shouldRefreshConfigSnapshot:
-            resolvedWorkspaceReusePolicy.shouldRefreshWorkspaceConfigSnapshot,
-          workspaceConfigMetadata:
-            resolvedWorkspaceReusePolicy.shouldPersistLatestWorkspaceConfigMetadata
-              ? latestWorkspaceConfigMetadata
-              : null,
-          baseRef: executionWorkspace.repoRef,
-          baseRefSha: executionWorkspace.baseRefSha ?? null,
-        });
-      let persistedWorktreeInstanceRoot =
-        resolvedWorkspaceReusePolicy.shouldRestoreExistingWorkspace &&
-        typeof reusableExistingExecutionWorkspace?.metadata?.[
-          WORKTREE_INSTANCE_ROOT_METADATA_KEY
-        ] === "string"
-          ? reusableExistingExecutionWorkspace.metadata[
-              WORKTREE_INSTANCE_ROOT_METADATA_KEY
-            ]
-          : null;
-      if (
-        !persistedWorktreeInstanceRoot &&
-        executionWorkspace.strategy === "git_worktree" &&
-        executionWorkspace.worktreePath
-      ) {
-        try {
-          persistedWorktreeInstanceRoot =
-            (
-              await readManagedWorktreeInstanceOwnership(
-                executionWorkspace.worktreePath,
-              )
-            )?.instanceRoot ?? null;
-        } catch (error) {
-          logger.warn(
-            {
-              runId: run.id,
-              issueId,
-              executionWorkspaceCwd: executionWorkspace.cwd,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            "Could not record managed worktree instance ownership",
-          );
-        }
-      }
-      const nextExecutionWorkspaceMetadata = {
-        ...baseExecutionWorkspaceMetadata,
-        ...(persistedWorktreeInstanceRoot
-          ? {
-              [WORKTREE_INSTANCE_ROOT_METADATA_KEY]:
-                persistedWorktreeInstanceRoot,
-            }
-          : {}),
-      };
-      const pendingForwardBranchReconcile =
-        executionWorkspace.pendingForwardBranchReconcile ?? null;
-      const branchNameForInitialPersistence =
-        pendingForwardBranchReconcile?.recordedBranchName ??
-        executionWorkspace.branchName;
-      try {
-        persistedExecutionWorkspace =
-          resolvedWorkspaceReusePolicy.shouldRestoreExistingWorkspace &&
-          reusableExistingExecutionWorkspace
-            ? await executionWorkspacesSvc.update(
-                reusableExistingExecutionWorkspace.id,
-                {
-                  cwd: executionWorkspace.cwd,
-                  repoUrl: executionWorkspace.repoUrl,
-                  baseRef: executionWorkspace.repoRef,
-                  branchName: branchNameForInitialPersistence,
-                  providerType:
-                    executionWorkspace.strategy === "git_worktree"
-                      ? "git_worktree"
-                      : "local_fs",
-                  providerRef: executionWorkspace.worktreePath,
-                  status: "active",
-                  lastUsedAt: new Date(),
-                  metadata: nextExecutionWorkspaceMetadata,
-                  projectWorkspaceId:
-                    reconcileReusedExecutionWorkspaceProjectWorkspaceId(
-                      reusableExistingExecutionWorkspace.projectWorkspaceId,
-                      resolvedProjectWorkspaceId,
-                    ),
-                },
-              )
-            : resolvedProjectId
-              ? await executionWorkspacesSvc.create({
-                  companyId: agent.companyId,
-                  projectId: resolvedProjectId,
-                  projectWorkspaceId: resolvedProjectWorkspaceId,
-                  sourceIssueId: issueRef?.id ?? null,
-                  mode:
-                    requestedExecutionWorkspaceMode === "isolated_workspace"
-                      ? "isolated_workspace"
-                      : requestedExecutionWorkspaceMode === "operator_branch"
-                        ? "operator_branch"
-                        : requestedExecutionWorkspaceMode === "agent_default"
-                          ? "adapter_managed"
-                          : "shared_workspace",
-                  strategyType:
-                    executionWorkspace.strategy === "git_worktree"
-                      ? "git_worktree"
-                      : "project_primary",
-                  name:
-                    branchNameForInitialPersistence ??
-                    issueRef?.identifier ??
-                    `workspace-${agent.id.slice(0, 8)}`,
-                  status: "active",
-                  cwd: executionWorkspace.cwd,
-                  repoUrl: executionWorkspace.repoUrl,
-                  baseRef: executionWorkspace.repoRef,
-                  branchName: branchNameForInitialPersistence,
-                  providerType:
-                    executionWorkspace.strategy === "git_worktree"
-                      ? "git_worktree"
-                      : "local_fs",
-                  providerRef: executionWorkspace.worktreePath,
-                  lastUsedAt: new Date(),
-                  openedAt: new Date(),
-                  metadata: nextExecutionWorkspaceMetadata,
-                })
-              : null;
-      } catch (error) {
-        if (executionWorkspace.created) {
-          try {
-            await cleanupExecutionWorkspaceArtifacts({
-              workspace: {
-                id:
-                  reusableExistingExecutionWorkspace?.id ??
-                  workspaceReuseRequest.requestedExecutionWorkspaceId ??
-                  `transient-${run.id}`,
-                cwd: executionWorkspace.cwd,
-                providerType:
-                  executionWorkspace.strategy === "git_worktree"
-                    ? "git_worktree"
-                    : "local_fs",
-                providerRef: executionWorkspace.worktreePath,
-                branchName: executionWorkspace.branchName,
-                repoUrl: executionWorkspace.repoUrl,
-                baseRef: executionWorkspace.repoRef,
-                projectId: resolvedProjectId,
-                projectWorkspaceId: resolvedProjectWorkspaceId,
-                sourceIssueId: issueRef?.id ?? null,
-                metadata: nextExecutionWorkspaceMetadata,
-              },
-              projectWorkspace: {
-                cwd: resolvedWorkspace.cwd,
-                cleanupCommand: null,
-              },
-              cleanupCommand: configSnapshot?.cleanupCommand ?? null,
-              teardownCommand:
-                configSnapshot?.teardownCommand ??
-                projectExecutionWorkspacePolicy?.workspaceStrategy
-                  ?.teardownCommand ??
-                null,
-              recorder: workspaceOperationRecorder,
-            });
-          } catch (cleanupError) {
-            logger.warn(
-              {
-                runId: run.id,
-                issueId,
-                executionWorkspaceCwd: executionWorkspace.cwd,
-                cleanupError:
-                  cleanupError instanceof Error
-                    ? cleanupError.message
-                    : String(cleanupError),
-              },
-              "Failed to cleanup realized execution workspace after persistence failure",
-            );
-          }
-        }
-        throw error;
-      }
-      await workspaceOperationRecorder.attachExecutionWorkspaceId(
-        persistedExecutionWorkspace?.id ?? null,
-      );
-      await recordWorkspaceConfigFreshnessOperation({
-        recorder: workspaceOperationRecorder,
-        runId: run.id,
-        decision: workspaceConfigFreshness,
-        hasExistingWorkspace: Boolean(reusableExistingExecutionWorkspace),
-        reuseRequested: requestedShouldReuseExisting,
-        workspaceReused: Boolean(reusedExecutionWorkspace),
-        configSnapshotRefreshed:
-          resolvedWorkspaceReusePolicy.shouldRefreshWorkspaceConfigSnapshot,
-        previousWorkspaceId:
-          workspaceReuseRequest.requestedExecutionWorkspaceId,
-        activeWorkspaceId: persistedExecutionWorkspace?.id ?? null,
-      });
-      if (
-        reusableExistingExecutionWorkspace &&
-        persistedExecutionWorkspace &&
-        reusableExistingExecutionWorkspace.id !==
-          persistedExecutionWorkspace.id &&
-        reusableExistingExecutionWorkspace.status === "active"
-      ) {
-        await executionWorkspacesSvc.update(
-          reusableExistingExecutionWorkspace.id,
-          {
-            status: "idle",
-            cleanupReason: null,
-          },
-        );
-      }
-      await bindIssueToPersistedExecutionWorkspace(persistedExecutionWorkspace);
-      const projectRepositoryPaths: string[] = [];
-      if (executionWorkspace.projectId && resolvedWorkspace.source === "project_primary" && !resolvedWorkspace.baseCwdFallback) {
-        const repositoryRows = await db.select().from(projectWorkspaces).where(and(
-          eq(projectWorkspaces.companyId, agent.companyId),
-          eq(projectWorkspaces.projectId, executionWorkspace.projectId),
-        )).orderBy(asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id));
-        const repositories = await prepareProjectRepositoryWorkspaces({
-          cwd: executionWorkspace.cwd,
-          anchorRepoUrl: executionWorkspace.repoUrl,
-          workspaces: repositoryRows,
-          resolveGitAuth: workspaceGitAuthProvider,
-        });
-        const paths = new Map(repositories.map((repo) => [repo.workspaceId, repo.cwd]));
-        projectRepositoryPaths.push(...repositories.map((repo) => path.relative(executionWorkspace.cwd, repo.cwd)));
-        if (resolvedWorkspace.workspaceId) paths.set(resolvedWorkspace.workspaceId, executionWorkspace.cwd);
-        resolvedWorkspace.workspaceHints = resolvedWorkspace.workspaceHints.map((hint) => ({
-          ...hint, cwd: paths.get(hint.workspaceId) ?? hint.cwd,
-        }));
-      }
-      if (persistedExecutionWorkspace) {
-        context.executionWorkspaceId = persistedExecutionWorkspace.id;
-        await db
-          .update(heartbeatRuns)
-          .set({
-            contextSnapshot: context,
-            updatedAt: new Date(),
-          })
-          .where(eq(heartbeatRuns.id, run.id));
-      }
-      const environmentAcquireStartedAtMs = Date.now();
-      let acquiredEnvironment: Awaited<
-        ReturnType<typeof envOrchestrator.acquireForRun>
-      >;
-      try {
-        await controllerLease.assertOwned();
-        const remoteRecovery = runOptions.nativeRestartRecovery?.kind === "reattach_remote_runner"
-          ? runOptions.nativeRestartRecovery : null;
-        const recoveryWorkspace = remoteRecovery
-          ? readNativeWorkspaceSyncReference(parseObject(run.runnerProfileJson).nativeWorkspaceSync) : null;
-        if (remoteRecovery && (!recoveryWorkspace || remoteRecovery.runId !== run.id ||
-            recoveryWorkspace.providerLeaseId !== remoteRecovery.remote.providerLeaseId ||
-            recoveryWorkspace.remoteCwd !== remoteRecovery.remote.remoteCwd)) {
-          throw new Error("native_remote_recovery_lease_mismatch");
-        }
-        acquiredEnvironment = await envOrchestrator.acquireForRun({
-          companyId: agent.companyId,
-          selectedEnvironmentId,
-          localEnvironmentId: localEnvironment.id,
-          adapterType: agent.adapterType,
-          adapterConfig: parseObject(agent.adapterConfig),
-          admittedLifecycleMode: persistedNativeExecutionInput?.session.lifecyclePolicy.mode,
-          issueId: issueId ?? null,
-          heartbeatRunId: run.id,
-          agentId: agent.id,
-          persistedExecutionWorkspace,
-          executionWorkspaceSettings: environmentExecutionWorkspaceSettings,
-          ...(remoteRecovery && recoveryWorkspace ? { reattachRemoteLease: {
-            leaseId: recoveryWorkspace.leaseId,
-            providerLeaseId: remoteRecovery.remote.providerLeaseId,
-            remoteCwd: remoteRecovery.remote.remoteCwd,
-          } } : {}),
-        });
-        await controllerLease.assertOwned();
-        nativeRunnerPreparationSpans.push({
-          name: "environment.acquire",
-          parentName: "task.run",
-          startedAtMs: environmentAcquireStartedAtMs,
-          endedAtMs: Date.now(),
-          attributes: { adapter: agent.adapterType },
-        });
-      } catch (error) {
-        nativeRunnerPreparationSpans.push({
-          name: "environment.acquire",
-          parentName: "task.run",
-          startedAtMs: environmentAcquireStartedAtMs,
-          endedAtMs: Date.now(),
-          outcome: "failed",
-          attributes: { adapter: agent.adapterType },
-        });
-        throw error;
-      }
-      const selectedEnvironment = acquiredEnvironment.environment;
-      // Defense-in-depth: re-check the actually-acquired environment against the
-      // execution allowlist. Even if selection were bypassed, a denied (local/ssh/
-      // non-k8s) environment FAILS the run here rather than executing untrusted.
-      const allowlistDecision = evaluateExecutionAllowlist(executionPolicy, {
-        driver: selectedEnvironment.driver,
-        provider:
-          typeof selectedEnvironment.config?.provider === "string"
-            ? selectedEnvironment.config.provider
-            : null,
-      });
-      if (!allowlistDecision.allowed) {
-        logger.error(
-          {
-            runId: run.id,
-            issueId,
-            agentId: agent.id,
-            environmentId: selectedEnvironment.id,
-            deniedDriver: allowlistDecision.deniedDriver,
-            deniedProvider: allowlistDecision.deniedProvider,
-          },
-          "Execution allowlist denied the resolved environment; failing run",
-        );
-        throw new Error(allowlistDecision.reason);
-      }
-      let activeEnvironmentLease = {
-        environment: acquiredEnvironment.environment,
-        lease: acquiredEnvironment.lease,
-        leaseContext: acquiredEnvironment.leaseContext,
-      };
-      const duplexObservabilityRecorder = createHostDuplexObservabilityRecorder(
-        {
-          tracer: getStartupTracer(),
-          incrementCounter: (metric) => {
-            void incrementToolRuntimeMetricCounter(db, {
-              companyId: run.companyId,
-              metric,
-            }).catch(() => {});
-          },
-          emitTransportEvent: (event) => {
-            void (async () => {
-              await appendRunEvent(run, {
-                eventType: event.name,
-                stream: "system",
-                level: event.dimensions.outcome === "error" ? "warn" : "info",
-                payload: { ...event.dimensions },
-              });
-            })().catch(() => {});
-          },
-        },
-      );
-      const environmentRealizeStartedAtMs = Date.now();
-      let realizationResult: Awaited<
-        ReturnType<typeof envOrchestrator.realizeForRun>
-      >;
-      try {
-        realizationResult = await envOrchestrator.realizeForRun({
-          environment: selectedEnvironment,
-          lease: activeEnvironmentLease.lease,
-          adapterType: agent.adapterType,
-          companyId: agent.companyId,
-          issueId: issueId ?? null,
-          heartbeatRunId: run.id,
-          executionWorkspace,
+        policy: {
+          trustPreset,
+          isolatedWorkspacesEnabled,
           effectiveExecutionWorkspaceMode,
-          persistedExecutionWorkspace,
-          duplexObservabilityRecorder,
-        });
-        nativeRunnerPreparationSpans.push({
-          name: "environment.workspace.realize",
-          parentName: "task.run",
-          startedAtMs: environmentRealizeStartedAtMs,
-          endedAtMs: Date.now(),
-          attributes: { driver: selectedEnvironment.driver },
-        });
-      } catch (error) {
-        nativeRunnerPreparationSpans.push({
-          name: "environment.workspace.realize",
-          parentName: "task.run",
-          startedAtMs: environmentRealizeStartedAtMs,
-          endedAtMs: Date.now(),
-          outcome: "failed",
-          attributes: { driver: selectedEnvironment.driver },
-        });
-        throw error;
-      }
-      const environmentRealizeEndedAtMs = Date.now();
-      activeEnvironmentLease = {
-        ...activeEnvironmentLease,
-        lease: realizationResult.lease,
-      };
-      persistedExecutionWorkspace =
-        realizationResult.persistedExecutionWorkspace;
-      // A sandbox realization may materialize or replace the durable workspace
-      // after the host-side provisioning boundary above. Bind that final ID to
-      // the issue before dispatch so warm turns reuse the exact same workspace
-      // and lease scope instead of silently creating a per-run replacement.
-      await bindIssueToPersistedExecutionWorkspace(persistedExecutionWorkspace);
-      const workspaceRealization = realizationResult.workspaceRealization;
-      const executionTarget = realizationResult.executionTarget;
+          requestedExecutionWorkspaceMode,
+          useIsolatedTaskDirectory,
+          nativeChatWorkspaceScope,
+          projectExecutionWorkspacePolicy,
+          issueExecutionWorkspaceSettings,
+          environmentExecutionWorkspaceSettings,
+          executionPolicy,
+        },
+        environment: {
+          selectedEnvironmentId,
+          localEnvironment,
+          selectedEnvironmentForConfig,
+          environmentResolution,
+          resolvedInstanceSettings,
+        },
+        config: {
+          mergedConfig,
+          configSnapshot,
+          secretManifest,
+        },
+        reuse: {
+          requestedShouldReuseExisting,
+          existingExecutionWorkspace,
+          reusableExistingExecutionWorkspace,
+          workspaceReuseRequest,
+          nativeRecoveryExecutionWorkspaceId,
+          persistedNativeExecutionInput,
+          isDotRun,
+          runOptions,
+        },
+        services: {
+          envOrchestrator,
+          executionWorkspacesSvc,
+          workspaceOperationsSvc,
+          issuesSvc,
+          resolveWorkspaceForRun,
+          resolveReusedGitWorkspaceAnchor,
+          appendRunEvent,
+        },
+      });
       let instructionCopy: Awaited<ReturnType<typeof instructionCopies.prepare>> = null;
       let instructionSave: Record<string, unknown> | null = null;
       const instructionPreparationKey = createHash("sha256").update(JSON.stringify({
@@ -6916,1704 +4711,167 @@ export function heartbeatService(
             }
           }
         }
-        let nativeExecution: NativeExecutionInput | null = null;
-        let getNativeFreshSessionHandoff: (() => Promise<string | null>) | undefined;
-        let nativeRunnerInstanceId: string | null = null;
-        if (nativeRuntimeResolution.kind === "native") {
-          if (!issueRef) {
-            throw new Error("native_runtime_ineligible: issue is required");
-          }
-          const nativeExecutionWorkspaceId =
-            persistedExecutionWorkspace?.id ?? run.id;
-          const nativeReviewContext = readNativeReviewAssignmentContext(context);
-          const nativeReview = nativeReviewContext ? await getNativeReviewAssignment(db, {
-            companyId: agent.companyId, issueId: issueRef.id, agentId: agent.id,
-            contextSnapshot: nativeReviewContext,
-          }) : null;
-          if (nativeReviewContext && !nativeReview) throw new Error("native_review_assignment_no_longer_available");
-          const nativeReviewRequest = nativeReview
-            ? buildNativeReviewRequest({
-                title: nativeReview.interaction.title,
-                summary: nativeReview.interaction.summary,
-                payload: nativeReview.interaction.payload,
-              })
-            : null;
-          const persistedContract = run.completionContractId
-            ? await db
-                .select()
-                .from(completionContracts)
-                .where(
-                  and(
-                    eq(completionContracts.id, run.completionContractId),
-                    eq(completionContracts.companyId, agent.companyId),
-                    eq(completionContracts.issueId, issueRef.id),
-                  ),
-                )
-                .limit(1)
-                .then((rows) => rows[0] ?? null)
-            : null;
-          // Only a server-verified human resolution may supply a current answer
-          // reference. Tool/agent results and generated summaries stay evidence.
-          const currentHumanResponseId = !nativeReviewRequest
-            ? executionContinuation?.humanResponses?.find(
-                (response) => response.id === executionContinuation.trigger.interactionId,
-              )?.id
-            : undefined;
-          const immediateCompletion = (() => {
-            if (nativeReviewRequest) return { requests: [nativeReviewRequest], sources: [null] };
-            const { requests, sources } = nativeCompletionRequestsWithSources(
-              safeWakeComments.length > 0
-                ? safeWakeComments
-                : safeWakeCommentContext?.body
-                  ? [safeWakeCommentContext]
-                  : [],
-              {
-                requiredFullWakeCommentCount:
-                  paperclipWakePayload?.fallbackFetchNeeded === true &&
-                  CHAT_PROVIDERS.some(
-                    (provider) =>
-                      provider ===
-                      paperclipWakePayload.externalChatProvider,
-                  ) &&
-                  Array.isArray(paperclipWakePayload.commentIds)
-                    ? paperclipWakePayload.commentIds.length
-                    : undefined,
-              },
-            );
-            // Preserve every admitted pending chat request while also
-            // retaining newer user direction materialized by recovery.
-            // A file-only wake must not inherit an old task objective.
-            const latestComment =
-              executionContinuation?.messages.findLast(
-                (message) =>
-                  message.authorType === "user" &&
-                  !message.createdByRunId &&
-                  !message.deleted &&
-                  message.body.trim().length > 0,
-              );
-            const latestRequest = latestComment?.body;
-            if (
-              latestRequest &&
-              !requests.some(
-                (request) => request === latestRequest.trim(),
-              )
-            ) {
-              requests.push(latestRequest.trim());
-              sources.push(nativeCompletionSource("comment", latestComment!.id, latestRequest));
-            }
-            return { requests: requests.length > 0 ? requests : undefined, sources };
-          })();
-          // Rebuilding a default contract is not a change in user direction.
-          // In particular, an upgraded checkpoint may have an intentionally
-          // authored contract and no continuation envelope yet.
-          const completionContract =
-            persistedContract && persistedNativeExecutionInput
-              ? {
-                  row: persistedContract,
-                  contract: persistedContract.contractJson as never,
-                }
-              : await ensureNativeCompletionContract({
-                  db,
-                  companyId: agent.companyId,
-                  issue: issueRef,
-                  actorId: agent.id,
-                  immediateRequest:
-                    nativeReviewRequest ?? (currentHumanResponseId
-                      ? null
-                      : executionContinuation?.objective ?? safeWakeCommentContext?.body ?? null),
-                  // The ordinary initial objective is selected by the server-owned
-                  // continuation envelope. Carry its explicit description source
-                  // through the singular-request compatibility path; do not infer
-                  // provenance for review requests, answers, or wake fallbacks.
-                  immediateRequestSource: nativeImmediateObjectiveSource({
-                    issueId: issueRef.id,
-                    objectiveSource: executionContinuation?.objectiveSource,
-                    excluded: Boolean(nativeReviewRequest || currentHumanResponseId),
-                  }),
-                  humanResponseId: currentHumanResponseId,
-                  immediateRequests: immediateCompletion.requests,
-                  immediateRequestSources: immediateCompletion.sources,
-                });
-          const taskNativeSessionId = !taskSessionCredentialCompatible ? null : readNonEmptyString(
-            taskSessionDecodedParams?.sessionId,
-          );
-          // Compatibility for native retry rows created before same-run restart
-          // recovery existed. Only an entirely unused replacement row may
-          // inherit its source checkpoint; any process/provider evidence on the
-          // replacement makes the ownership ambiguous and therefore ineligible.
-          const legacyRetrySource =
-            run.retryOfRunId && !isFailedChatRunRetry
-              ? await db
-                  .select({
-                    id: heartbeatRuns.id,
-                    companyId: heartbeatRuns.companyId,
-                    agentId: heartbeatRuns.agentId,
-                    runnerInstanceId: heartbeatRuns.runnerInstanceId,
-                    nativeSessionId: heartbeatRuns.nativeSessionId,
-                    runnerProfileJson: heartbeatRuns.runnerProfileJson,
-                    runtimeMode: heartbeatRuns.runtimeMode,
-                    status: heartbeatRuns.status,
-                  })
-                  .from(heartbeatRuns)
-                  .where(
-                    and(
-                      eq(heartbeatRuns.id, run.retryOfRunId),
-                      eq(heartbeatRuns.companyId, agent.companyId),
-                      eq(heartbeatRuns.agentId, agent.id),
-                    ),
-                  )
-                  .limit(1)
-                  .then((rows) => rows[0] ?? null)
-              : null;
-          const nativeBootstrapHasProviderEvidence =
-            legacyRetrySource ||
-            run.nativeSessionId ||
-            persistedNativeExecutionInput
-              ? await db
-                  .select({ id: heartbeatRunEvents.id })
-                  .from(heartbeatRunEvents)
-                  .where(
-                    and(
-                      eq(heartbeatRunEvents.runId, run.id),
-                      inArray(heartbeatRunEvents.eventType, [
-                        "harness.ready",
-                        "session.started",
-                        "session.resumed",
-                        "session.updated",
-                        "turn.started",
-                        "provider.event",
-                        "provider.rpc_result",
-                      ]),
-                    ),
-                  )
-                  .limit(1)
-                  .then((rows) => rows.length > 0)
-              : false;
-          const compatibleLegacyRetrySource =
-            !managedAiRuntime && !isConversation(issueContext) && context.forceFreshSession !== true && isUnusedLegacyNativeRetryReplacement({
-              replacement: run,
-              source: legacyRetrySource,
-              hasProviderEvents: nativeBootstrapHasProviderEvidence,
-            })
-              ? legacyRetrySource
-              : null;
-          const legacyRetrySessionId =
-            compatibleLegacyRetrySource?.nativeSessionId;
-          const taskResumeRunId =
-            taskSessionForRun?.lastRunId &&
-            taskSessionForRun.lastRunId !== run.id &&
-            isNativeSessionId(taskNativeSessionId)
-              ? taskSessionForRun.lastRunId
-              : null;
-          const resumableTaskSessionId = isDotRun ? null : taskResumeRunId
-            ? taskNativeSessionId
-            : (legacyRetrySessionId ?? null);
-          const requestedNativeSessionId =
-            run.nativeSessionId ?? resumableTaskSessionId;
-          // A task-session lastRunId can lag a failed turn or point at an older
-          // normalized session. Find the newest exact-session authority instead.
-          // Rows that already acquired provider authority are progress barriers,
-          // even when they do not contain a usable checkpoint.
-          const previousNativeRun =
-            requestedNativeSessionId &&
-            isUnusedNativeSessionBootstrap(
-              run,
-              nativeBootstrapHasProviderEvidence,
-            )
-              ? await findNativeSessionResumeRun(db, {
-                  companyId: agent.companyId,
-                  agentId: agent.id,
-                  issueId: issueRef.id,
-                  normalizedSessionId: requestedNativeSessionId,
-                  currentRunId: run.id,
-                  beforeCreatedAt: run.createdAt,
-                })
-              : null;
-          nativeRunnerInstanceId =
-            previousNativeRun?.runnerInstanceId &&
-            previousNativeRun.nativeSessionId ===
-              (run.nativeSessionId ?? resumableTaskSessionId)
-              ? previousNativeRun.runnerInstanceId
-              : (run.runnerInstanceId ?? randomUUID());
-          let nativeSessionId =
-            run.nativeSessionId ?? resumableTaskSessionId ?? randomUUID();
-          let nativeResumeCheckpoint: ReturnType<
-            typeof rebindNativeSessionCheckpoint
-          > = null;
-          const agentLifecyclePolicy =
-            parseObject(agent.adapterConfig).lifecycleMode === "warm"
-              ? {
-                  mode: "warm" as const,
-                  idleTimeoutMs: resolvePaperclipRunnerIdleTimeoutMs(
-                    parseObject(agent.adapterConfig).idleTimeoutMs,
-                  ),
-                }
-              : { mode: "per_turn" as const, idleTimeoutMs: null };
-          const environmentLifecyclePolicy =
-            executionTarget?.kind === "remote" &&
-            executionTarget.transport === "sandbox"
-              ? (executionTarget.runnerLifecyclePolicy ?? null)
-              : null;
-          // Native Codex owns a durable, session-scoped home. It flushes refreshed
-          // auth into each invocation's private home before that home is removed.
-          // Other managed harnesses still require per-turn credential cleanup.
-          const supportsManagedWarmSession = agent.adapterType === "paperclip_runner" &&
-            nativeRuntimeResolution.profile.backend === "codex_app_server";
-          const effectiveLifecyclePolicy = persistedNativeExecutionInput?.session.lifecyclePolicy ??
-            (nativeRuntimeResolution.profile.backend === "openai_dot_mcp" || managedAiRuntime && !supportsManagedWarmSession
-              ? { mode: "per_turn" as const, idleTimeoutMs: null }
-              : environmentLifecyclePolicy ?? agentLifecyclePolicy);
-          if (
-            effectiveLifecyclePolicy.mode === "warm" &&
-            executionTarget?.kind === "remote" &&
-            executionTarget.transport === "sandbox" &&
-            (executionTarget.reusableLeaseConfigured !== true ||
-              executionTarget.effectiveCapabilities?.reusableLeases !== true)
-          ) {
-            throw new Error("runner_warm_environment_requires_reusable_lease");
-          }
-          const persistedProfile = persistedRunnerProfile;
-          if (persistedNativeExecutionInput) {
-            nativeExecution = persistedNativeExecutionInput;
-            if (
-              nativeExecution.binding.companyId !== agent.companyId ||
-              nativeExecution.binding.runId !== run.id ||
-              nativeExecution.binding.issueId !== issueRef.id ||
-              nativeExecution.binding.agentId !== agent.id ||
-              nativeExecution.binding.executionWorkspaceId !==
-                nativeExecutionWorkspaceId ||
-              nativeExecution.completionContract.id !==
-                completionContract.row.id ||
-              nativeExecution.completionContract.sha256 !==
-                completionContract.row.canonicalSha256
-            )
-              throw new Error(
-                "native_execution_input_persisted_binding_mismatch",
-              );
-            // Recover only the originally admitted request. A stored idle
-            // checkpoint can precede an already-started provider turn, so even
-            // apparent idleness is not authority to rewrite its contract.
-            // Newer user direction retains its separate durable wakeup cause.
-            // A failed pre-bootstrap attempt may have persisted its immutable
-            // input before discovering that lastRunId no longer names this
-            // session. Restore only an exactly compatible prior checkpoint;
-            // never rewrite the admitted input or skip current provider work.
-            if (
-              previousNativeRun &&
-              isUnusedNativeSessionBootstrap(
-                run,
-                nativeBootstrapHasProviderEvidence,
-              )
-            ) {
-              nativeResumeCheckpoint = rebindNativeSessionCheckpoint({
-                previousRun: previousNativeRun,
-                currentExecution: nativeExecution,
-                executionTargetKind: executionTarget?.kind ?? "local",
-              });
-            }
-            if (nativeExecution.provider.kind === "claude_managed") {
-              const recoveryProfile = await managedAgentProfileService(
-                db,
-              ).requireQualified(
-                agent.companyId,
-                nativeExecution.provider.managedProfile.profileId,
-              );
-              assertManagedProfileRecoveryBinding({
-                adapterConfig: agent.adapterConfig,
-                snapshot: nativeExecution.provider.managedProfile,
-                stored: recoveryProfile,
-              });
-            }
-            if (nativeExecution.provider.kind === "aws_agentcore") {
-              const recoveryProfile = await remoteAgentProfileService(
-                db,
-              ).requireQualified(
-                agent.companyId,
-                nativeExecution.provider.agentCoreProfile.profileId,
-                "aws_bedrock_agentcore_harness",
-              );
-              assertAgentCoreProfileRecoveryBinding({
-                snapshot: nativeExecution.provider.agentCoreProfile,
-                stored: recoveryProfile,
-              });
-            }
-          } else {
-            const interactionId = readNonEmptyString(context.interactionId);
-            const interactionResponses = context[
-              EXTERNAL_CHAT_QUESTION_RESPONSE_KEY
-            ]
-              ? await materializeExternalChatQuestionResponseInput({
-                  db,
-                  binding: {
-                    companyId: agent.companyId,
-                    issueId: issueRef.id,
-                    runId: run.id,
-                    agentId: agent.id,
-                  },
-                  contextSnapshot: context,
-                })
-              : await materializeNativeInteractionResponses({
-                  db,
-                  companyId: agent.companyId,
-                  issueId: issueRef.id,
-                  runId: run.id,
-                  agentId: agent.id,
-                  interactionIds: Array.isArray(context.interactionIds)
-                    ? [
-                        ...new Set([
-                          ...(interactionId ? [interactionId] : []),
-                          ...context.interactionIds.filter(
-                            (id): id is string => typeof id === "string",
-                          ),
-                        ]),
-                      ]
-                    : interactionId
-                      ? [interactionId]
-                      : [],
-                });
-            const runnerAdapterConfig = parseObject(agent.adapterConfig);
-            const managedProfile =
-              nativeRuntimeResolution.profile.backend ===
-              "claude_managed_agents_api"
-                ? await managedAgentProfileService(db).requireQualified(
-                    agent.companyId,
-                    readNonEmptyString(runnerAdapterConfig.managedProfileId) ??
-                      "",
-                  )
-                : null;
-            const agentCoreProfile =
-              nativeRuntimeResolution.profile.backend ===
-              "aws_agentcore_harness_api"
-                ? await remoteAgentProfileService(db).requireQualified(
-                    agent.companyId,
-                    readNonEmptyString(
-                      runnerAdapterConfig.agentCoreProfileId,
-                    ) ?? "",
-                    "aws_bedrock_agentcore_harness",
-                  )
-                : null;
-            if (managedProfile) {
-              const rawApiKeyBinding = parseObject(
-                runnerAdapterConfig.env,
-              ).ANTHROPIC_API_KEY;
-              const boundSecretId =
-                typeof rawApiKeyBinding === "object" &&
-                rawApiKeyBinding !== null
-                  ? readNonEmptyString(
-                      (rawApiKeyBinding as Record<string, unknown>).secretId,
-                    )
-                  : null;
-              if (boundSecretId !== managedProfile.apiKeySecretId) {
-                throw new ConfigurationIncompleteFailure(
-                  "configuration incomplete: Claude Managed profile API key is not bound at env.ANTHROPIC_API_KEY",
-                  {
-                    configurationIncomplete: {
-                      reason: "managed_agent_profile_secret_binding_mismatch",
-                      companyId: agent.companyId,
-                      agentId: agent.id,
-                      profileId: managedProfile.id,
-                      requiredEnvKeys: ["ANTHROPIC_API_KEY"],
-                    },
-                  },
-                );
-              }
-            }
-            const executionMode =
-              issueRef.workMode === "planning" && !isConversation(issueContext) && !acceptedPlanContinuationWake
-                ? ("plan" as const)
-                : ("default" as const);
-            const pinnedPlan =
-              executionMode === "plan"
-                ? await documentService(db).getIssueDocumentByKey(
-                    issueRef.id,
-                    "plan",
-                  )
-                : null;
-            const pinnedReviewContext =
-              executionMode === "plan"
-                ? await buildPlanReviewContext({
-                    db,
-                    companyId: agent.companyId,
-                    issueId: issueRef.id,
-                    issueWorkMode: issueRef.workMode,
-                    interactionId: readNonEmptyString(context.interactionId),
-                  })
-                : null;
-            const pinnedPlanMarkdown = pinnedPlan?.body ?? "";
-            const dotBinding = nativeRuntimeResolution.profile.backend === "openai_dot_mcp"
-              ? await dotRunnerBroker(db).snapshot(agent.companyId, agent.id, String(parseObject(agent.adapterConfig).dotBindingId ?? "")) : undefined;
-            const nativeRuntimeContext = await buildNativeRuntimeContext({
-              db,
-              agent,
-              runId: run.id,
-              runtimeConfig,
-              runtimeSkillEntries,
-              instructionWorkingCopy: instructionCopy ? { rootPath: instructionCopy.executionRoot, entryPath: instructionCopy.entryFile, ...(isAgentDirectoryCopy(instructionCopy) ? { kind: "agent_files" as const } : {}) } : undefined,
-            });
-            getNativeFreshSessionHandoff = nativeReviewRequest ? undefined : getFreshSessionHandoff;
-            const nativeProviderConfig = nativeRuntimeResolution.profile.backend === "codex_app_server"
-              || nativeRuntimeResolution.profile.backend === "opencode_server"
-              ? projectPaperclipRunnerTaskConfig(
-                  nativeRuntimeResolution.profile.backend,
-                  agent.adapterConfig,
-                  issueAssigneeOverrides?.adapterConfig,
-                  managedAiRuntime ? readNonEmptyString(resolvedConfig.model) ?? undefined : undefined,
-                )
-              : agent.adapterConfig;
-            const requestedNativeProvider = resolvePaperclipRunnerNativeProviderInput({
-              backend: nativeRuntimeResolution.profile.backend,
-              adapterConfig: nativeProviderConfig, managedProfile, agentCoreProfile, dotBinding,
-            });
-            const codexCliVersion = agent.adapterType === "paperclip_runner" && requestedNativeProvider.provider === "codex"
-              ? await readRemoteCodexModelCliVersion({
-                  model: requestedNativeProvider.model,
-                  target: executionTarget,
-                  remoteCodexPath: runtimeEnv.PAPERCLIP_RUNNER_REMOTE_CODEX_PATH,
-                  remoteCodexNpmSpec: runtimeEnv.PAPERCLIP_RUNNER_REMOTE_CODEX_NPM_SPEC,
-                }) : null;
-            const nativeProvider = codexCliVersion
-              ? resolvePaperclipRunnerNativeProviderInput({
-                  backend: nativeRuntimeResolution.profile.backend,
-                  adapterConfig: nativeProviderConfig, codexCliVersion, managedProfile, agentCoreProfile, dotBinding,
-                }) : requestedNativeProvider;
-            if (nativeProvider.model !== requestedNativeProvider.model) {
-              await postNativeModelFallbackWarning({
-                issuesSvc, onEvent: onAdapterEvent, issueId: issueRef.id, runId: run.id,
-                requestedModel: requestedNativeProvider.model, effectiveModel: nativeProvider.model,
-                codexCliVersion: codexCliVersion!,
-              });
-            }
-            const buildExecution = ({ normalizedSessionId, resumedSession }: { normalizedSessionId: string; resumedSession: boolean }) =>
-                  buildNativeExecutionInput({
-                    agentKeyId: agentIdentity?.keyId,
-                    companyId: agent.companyId,
-                    runId: run.id,
-                    issue: nativeReviewRequest ? { ...issueRef, title: `Review: ${issueRef.title}`, description: nativeReviewRequest } : issueRef,
-                    taskPrompt: [
-                      nativeReviewRequest ?? readNonEmptyString(
-                        selectPaperclipTaskMarkdown(context, {
-                          resumedSession: false,
-                          includeCommunicationGuidance: false,
-                        }),
-                      ) ??
-                      `# ${issueRef.identifier ?? issueRef.id}: ${issueRef.title}`,
-                      nativeRuntimeResolution.profile.backend !== "openai_dot_mcp" && projectRepositoryPaths.length > 0
-                        ? `## Project repositories\nThe task workspace also contains these editable Git repositories:\n${projectRepositoryPaths.map((repo) => `- ${repo}`).join("\n")}`
-                        : null,
-                    ].filter(Boolean).join("\n\n"),
-                    initialCommunicationGuidance: nativeReviewRequest ? null : readNonEmptyString(context.paperclipTaskCommunicationGuidance),
-                    wakePayload: context.paperclipWake,
-                    turnContext: context.paperclipTurnContext,
-                    resumedSession,
-                    previousTurn: (() => {
-                      if (!previousNativeRun || nativeReviewRequest) return null;
-                      try {
-                        const previousTask = parseNativeExecutionInput(parseObject(previousNativeRun.runnerProfileJson).nativeExecutionInput).task;
-                        if (paperclipWakePayload?.externalChatProvider) {
-                          // External native inputs use a neutral task title. Compare
-                          // the saved canonical brief so old provider text is not
-                          // repeated as a change, while genuine edits still arrive.
-                          const savedIssue = parseObject(parseObject(previousNativeRun.contextSnapshot).paperclipIssue);
-                          if (savedIssue.id !== issueRef.id || typeof savedIssue.title !== "string" ||
-                            (savedIssue.description !== null && typeof savedIssue.description !== "string")) return null;
-                          return { runId: previousNativeRun.id, task: { title: savedIssue.title, description: savedIssue.description } };
-                        }
-                        return { runId: previousNativeRun.id, task: previousTask };
-                      } catch {
-                        // An invalid prior snapshot must use the fresh bootstrap.
-                        return null;
-                      }
-                    })(),
-                    conversationMode: context.conversationMode === true,
-                    agentId: agent.id,
-                    workspace: {
-                      // Projectless paperclip_runner tasks still have a resolved local cwd. Bind that
-                      // transient workspace to the run id so the native input remains durable and replayable
-                      // without fabricating a project-scoped execution_workspaces row.
-                      id: nativeExecutionWorkspaceId,
-                      cwd: executionWorkspace.cwd,
-                      repoUrl: executionWorkspace.repoUrl,
-                      repoRef: executionWorkspace.repoRef,
-                      branchName: executionWorkspace.branchName,
-                    },
-                    normalizedSessionId,
-                    executionMode,
-                    planningContext:
-                      executionMode === "plan"
-                        ? {
-                            documentId: pinnedPlan?.id ?? null,
-                            baseRevisionId:
-                              pinnedPlan?.latestRevisionId ?? null,
-                            baseRevisionNumber:
-                              pinnedPlan?.latestRevisionNumber ?? 0,
-                            markdown: pinnedPlanMarkdown,
-                            sha256: createHash("sha256")
-                              .update(pinnedPlanMarkdown)
-                              .digest("hex"),
-                            reviewContext: pinnedReviewContext
-                              ? (structuredClone(
-                                  pinnedReviewContext,
-                                ) as unknown as Record<string, unknown>)
-                              : {},
-                          }
-                        : null,
-                    ...nativeProvider,
-                    lifecyclePolicy: effectiveLifecyclePolicy,
-                    interactionResponses,
-                    completionContract: {
-                      id: completionContract.row.id,
-                      sha256: completionContract.row.canonicalSha256,
-                      schemaVersion: completionContract.row.schemaVersion,
-                      contract: completionContract.contract,
-                      sources: "sources" in completionContract ? completionContract.sources : undefined,
-                    },
-                    runtimeContext: nativeRuntimeContext,
-                  });
-            const backendDescriptor = await describeRunnerdNativeSessionBackend(buildExecution({
-              normalizedSessionId: nativeSessionId, resumedSession: previousNativeRun !== null,
-            }));
-            const nativeExecutionWithCheckpoint = buildNativeExecutionWithCheckpoint({
-              previousRun: previousNativeRun,
-              normalizedSessionId: nativeSessionId,
-              executionTargetKind: executionTarget?.kind ?? "local",
-              toolRefreshOnResume: backendDescriptor.capabilities.toolRefreshOnResume === true,
-              refreshTools: context.refreshTools === true,
-              buildExecution,
-            });
-            nativeExecution = nativeExecutionWithCheckpoint.execution;
-            nativeResumeCheckpoint = nativeExecutionWithCheckpoint.checkpoint;
-            if (
-              nativeSessionId !==
-              nativeExecutionWithCheckpoint.normalizedSessionId
-            ) {
-              nativeRunnerInstanceId = randomUUID();
-            }
-            nativeSessionId = nativeExecutionWithCheckpoint.normalizedSessionId;
-          }
-          const nativeSandboxLifecycle = resolveNativeSandboxLifecycle({
-            adapterType: agent.adapterType,
-            lifecyclePolicy: nativeExecution.session.lifecyclePolicy,
-            target: executionTarget,
-          });
-          if (nativeSandboxLifecycle) {
-            nativeLifecycleTelemetryForRun = {
-              provider: nativeExecution.provider.kind,
-              harness: nativeExecution.session.driverKind,
-              lifecycleMode: nativeExecution.session.lifecyclePolicy.mode,
-              sandboxResource: nativeSandboxLifecycle.sandboxResource,
-            };
-            const selectedLifecycleSpan = getStartupTracer(
-              "paperclip.environment-lifecycle",
-            ).startSpan("sandbox.lifecycle.selected", {
-              attributes: {
-                "paperclip.native.span.provider": nativeExecution.provider.kind,
-                "paperclip.native.span.harness":
-                  nativeExecution.session.driverKind,
-                "paperclip.native.span.lifecycle_mode":
-                  nativeExecution.session.lifecyclePolicy.mode,
-                "paperclip.native.span.sandbox_resource":
-                  nativeSandboxLifecycle.sandboxResource,
-                "paperclip.native.span.outcome": "selected",
-                "paperclip.native.span.bytes_transferred": 0,
-              },
-            });
-            selectedLifecycleSpan.end();
-          }
-          providerResourceDispositionForRun =
-            nativeSandboxLifecycle?.sandboxResource === "keep_running"
-              ? "keep_running"
-              : nativeSandboxLifecycle?.sandboxResource === "stop_and_reuse"
-                ? "stop_and_retain"
-                : nativeSandboxLifecycle?.sandboxResource ===
-                    "destroy_after_turn"
-                  ? "destroy"
-                  : undefined;
-          await options.beforeNativeRuntimeSelection?.(run.id);
-          const nativeSelected = await db.transaction(async (tx) => {
-            const lockedRun = await tx
-              .select()
-              .from(heartbeatRuns)
-              .where(eq(heartbeatRuns.id, run.id))
-              .for("update")
-              .limit(1)
-              .then((rows) => rows[0] ?? null);
-            if (!lockedRun) throw new Error("native_runtime_run_missing");
-            // Cancellation and runtime selection serialize on this row. A
-            // stopped preparation must never create a new native coordinator.
-            if (lockedRun.status !== "running" || lockedRun.resultJson?.startupCancellation) return false;
-            if (lockedRun.runtimeMode === "legacy" && lockedRun.controllerBootId &&
-                !(await renewLegacyControllerLease(tx as unknown as Db, lockedRun))) {
-              nativeOwnershipHeld = true;
-              return false;
-            }
-            if (
-              lockedRun.runtimeModeResolvedAt &&
-              lockedRun.runtimeMode !== "native"
-            ) {
-              throw new Error("native_runtime_mode_conflict");
-            }
-            const lockedProfile = parseObject(lockedRun.runnerProfileJson);
-            const persistedNativeSessionId =
-              await prepareNativeSessionBootstrapPersistence(tx, {
-                run: lockedRun,
-                selectedSessionId: nativeSessionId,
-                execution: nativeExecution!,
-                restoringCheckpoint: nativeResumeCheckpoint !== null,
-              });
-            await tx
-              .update(heartbeatRuns)
-              .set({
-                runtimeMode: "native",
-                runtimeModeResolverVersion:
-                  lockedRun.runtimeModeResolverVersion ??
-                  nativeRuntimeResolution.resolverVersion,
-                runtimeModeReason:
-                  lockedRun.runtimeModeReason ?? nativeRuntimeResolution.reason,
-                runtimeModeResolvedAt:
-                  lockedRun.runtimeModeResolvedAt ?? new Date(),
-                runnerProfileJson: {
-                  ...nativeRuntimeResolution.profile,
-                  ...lockedProfile,
-                  ...(lockedProfile.nativeExecutionInput
-                    ? {}
-                    : { recoveryEventInventoryVersion: 1 }),
-                  ...(providerTraceRequested
-                    ? {
-                        providerTrace: {
-                          mode: "raw",
-                          traceId: providerTraceCapture?.metadata.id ?? null,
-                          maxBytes: PROVIDER_TRACE_MAX_BYTES,
-                        },
-                      }
-                    : {}),
-                  nativeExecutionInput:
-                    lockedProfile.nativeExecutionInput ?? nativeExecution,
-                  nativeToolContractFingerprint:
-                    nativeToolContractFingerprintForTarget(
-                      executionTarget?.kind ?? "local",
-                    ),
-                  ...(lockedProfile.sessionCheckpoint != null
-                    ? { sessionCheckpoint: lockedProfile.sessionCheckpoint }
-                    : nativeResumeCheckpoint
-                      ? {
-                          sessionCheckpoint:
-                            nativeResumeCheckpoint as unknown as Record<
-                              string,
-                              unknown
-                            >,
-                        }
-                      : {}),
-                },
-                runnerInstanceId:
-                  previousNativeRun?.runnerInstanceId &&
-                  persistedNativeSessionId === previousNativeRun.nativeSessionId
-                    ? previousNativeRun.runnerInstanceId
-                    : lockedRun.nativeSessionId !== persistedNativeSessionId
-                      ? nativeRunnerInstanceId
-                      : (lockedRun.runnerInstanceId ?? nativeRunnerInstanceId),
-                nativeSessionId: persistedNativeSessionId,
-                processPid:
-                  lockedRun.processPid ??
-                  (previousNativeRun?.nativeSessionId === nativeSessionId
-                    ? previousNativeRun.processPid
-                    : null),
-                processGroupId:
-                  lockedRun.processGroupId ??
-                  (previousNativeRun?.nativeSessionId === nativeSessionId
-                    ? previousNativeRun.processGroupId
-                    : null),
-                processStartedAt:
-                  lockedRun.processStartedAt ??
-                  (previousNativeRun?.nativeSessionId === nativeSessionId
-                    ? previousNativeRun.processStartedAt
-                    : null),
-                nativeIssueId: lockedRun.nativeIssueId ?? issueRef.id,
-                driverKind:
-                  lockedRun.driverKind ??
-                  nativeExecution?.session.driverKind ??
-                  "codex_app_server",
-                driverVersion: lockedRun.driverVersion ?? "phase6-v1",
-                completionContractId:
-                  lockedRun.completionContractId ?? completionContract.row.id,
-                completionContractSha256:
-                  lockedRun.completionContractSha256 ??
-                  completionContract.row.canonicalSha256,
-                nativePhase: lockedRun.nativePhase ?? "observed",
-                nativePhaseUpdatedAt:
-                  lockedRun.nativePhaseUpdatedAt ?? new Date(),
-                updatedAt: new Date(),
-              })
-              .where(eq(heartbeatRuns.id, run.id));
-            await tx
-              .insert(nativeRunFinalizations)
-              .values({
-                runId: run.id,
-                companyId: agent.companyId,
-                issueId: issueRef.id,
-                phase: "observed",
-              })
-              .onConflictDoNothing();
-            return true;
-          });
-          if (!nativeSelected) return;
-          controllerLease.stop();
-          nativeWorkspaceSync = await prepareNativeWorkspaceSync({
-            db,
-            runId: run.id,
-            companyId: agent.companyId,
-            workspaceId: nativeExecutionWorkspaceId,
-            workspaceLocalDir: executionWorkspace.cwd,
-            target: executionTarget,
-            lease: activeEnvironmentLease.lease,
-            restartRecovery: runOptions.nativeRestartRecovery,
-            sameRunRecovery: Boolean(runOptions.nativeLeaseOwner),
-            resourceDisposition: providerResourceDispositionForRun,
-          });
-        } else {
-          const legacyWarmLifecycle =
-            executionTarget?.kind === "remote" &&
-            executionTarget.transport === "sandbox" &&
-            executionTarget.runnerLifecyclePolicy?.mode === "warm"
-              ? resolveReusableSandboxLifecycle({
-                  lifecyclePolicy: executionTarget.runnerLifecyclePolicy,
-                  target: executionTarget,
-                })
-              : null;
-          if (legacyWarmLifecycle?.sandboxResource === "keep_running") {
-            providerResourceDispositionForRun = "keep_running";
-          }
-          await db
-            .update(heartbeatRuns)
-            .set({
-              runtimeMode: "legacy",
-              runtimeModeResolverVersion:
-                nativeRuntimeResolution.resolverVersion,
-              runtimeModeReason: nativeRuntimeResolution.reason,
-              runtimeModeResolvedAt: run.runtimeModeResolvedAt ?? new Date(),
-              // Preserve server-owned admission and dispatch evidence on this
-              // row; never copy another run's execution profile.
-              runnerProfileJson: sql`(case when ${heartbeatRuns.runnerProfileJson} ? ${CHAT_CONTROL_RECOVERY_ADMISSION_KEY}
-                then jsonb_build_object(${CHAT_CONTROL_RECOVERY_ADMISSION_KEY}::text, ${heartbeatRuns.runnerProfileJson}->${CHAT_CONTROL_RECOVERY_ADMISSION_KEY})
-                else '{}'::jsonb end)
-              || (case when ${heartbeatRuns.runnerProfileJson} ? 'adapterDispatch'
-                then jsonb_build_object('adapterDispatch', ${heartbeatRuns.runnerProfileJson}->'adapterDispatch')
-                else '{}'::jsonb end) || ${JSON.stringify(providerTraceRequested ? { providerTrace: { mode: "raw", traceId: providerTraceCapture?.metadata.id ?? null, maxBytes: PROVIDER_TRACE_MAX_BYTES } } : {})}::jsonb`,
-              updatedAt: new Date(),
-            })
-            .where(eq(heartbeatRuns.id, run.id));
-        }
-        const localAgentJwtScope =
-          issueRef?.workMode === "skill_test"
-            ? { kind: "skill_test" as const, issueId: issueRef.id }
-            : { kind: "standard" as const };
-        const authToken =
-          nativeRuntimeResolution.kind === "legacy" &&
-          adapter.supportsLocalAgentJwt
-            ? createLocalAgentJwt(
-                agent.id,
-                agent.companyId,
-                agent.adapterType,
-                run.id,
-                run.responsibleUserId,
-                localAgentJwtScope,
-              )
-            : null;
-        if (
-          nativeRuntimeResolution.kind === "legacy" &&
-          adapter.supportsLocalAgentJwt &&
-          !authToken
-        ) {
-          logger.warn(
-            {
-              companyId: agent.companyId,
-              agentId: agent.id,
-              runId: run.id,
-              adapterType: agent.adapterType,
-            },
-            "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
-          );
-        }
-        let adapterFinalizeOutcome: "succeeded" | "failed" | null = null;
-        const inspectFinalizeWorkspaceBranch = async () => {
-          const workspaceRecord = persistedExecutionWorkspace?.id
-            ? await executionWorkspacesSvc.getById(
-                persistedExecutionWorkspace.id,
-              )
-            : persistedExecutionWorkspace;
-          if (workspaceRecord?.strategyType !== "git_worktree") return null;
-
-          const worktreePath =
-            readNonEmptyString(workspaceRecord.providerRef) ??
-            readNonEmptyString(workspaceRecord.cwd) ??
-            readNonEmptyString(executionWorkspace.worktreePath) ??
-            readNonEmptyString(executionWorkspace.cwd);
-          const expectedBranchName =
-            readNonEmptyString(workspaceRecord.branchName) ??
-            readNonEmptyString(executionWorkspace.branchName);
-          if (!worktreePath || !expectedBranchName) return null;
-
-          const inspection = await inspectManagedGitWorktreeBranch({
-            worktreePath,
-            expectedBranchName,
-          });
-          return { workspaceRecord, inspection };
-        };
-        const recordWorkspaceFinalize = async (
-          status: "succeeded" | "failed",
-          metadata?: Record<string, unknown>,
-        ) => {
-          if (adapterFinalizeOutcome) return;
-          let finalizeBranchMetadata: Record<string, unknown> | null = null;
-          let finalizeBranchRepairMetadata: Record<string, unknown> | null =
-            null;
-          if (status === "succeeded") {
-            const branchInspection = await inspectFinalizeWorkspaceBranch();
-            if (branchInspection) {
-              let inspection = branchInspection.inspection;
-              const initialManagedGitWorktreeBranch =
-                formatManagedGitWorktreeBranchInspection(inspection);
-              if (
-                !inspection.valid &&
-                inspection.reasonCode === "branch_mismatch" &&
-                inspection.repoRoot
-              ) {
-                let repairedExpectedBranchName = inspection.expectedBranchName;
-                try {
-                  const coherence = await ensureGitWorktreeBranchCoherent({
-                    db,
-                    repoRoot: inspection.repoRoot,
-                    worktreePath: inspection.worktreePath,
-                    expectedBranchName: inspection.expectedBranchName,
-                    actualBranchName: inspection.actualBranchName,
-                    sourceIssue: issueRef
-                      ? {
-                          id: issueRef.id,
-                          identifier: issueRef.identifier,
-                          title: issueRef.title,
-                          workMode: issueRef.workMode,
-                        }
-                      : null,
-                    executionWorkspaceId: branchInspection.workspaceRecord.id,
-                    heartbeatRunId: run.id,
-                    enableWorkspaceBranchReconcileForward:
-                      resolvedInstanceSettings.experimental
-                        .enableWorkspaceBranchReconcileForward,
-                    enableWorkspaceDirtyQuarantineRepair:
-                      resolvedInstanceSettings.experimental
-                        .enableWorkspaceDirtyQuarantineRepair,
-                    persistForwardReconcile: false,
-                    reconcileOperationPhase: "workspace_finalize",
-                    recorder: workspaceOperationRecorder,
-                  });
-                  if (
-                    coherence.branchName &&
-                    coherence.branchName !==
-                      branchInspection.workspaceRecord.branchName
-                  ) {
-                    repairedExpectedBranchName = coherence.branchName;
-                    executionWorkspace.branchName = coherence.branchName;
-                    executionWorkspace.warnings.push(...coherence.warnings);
-                  }
-                } catch (repairErr) {
-                  const workspaceValidationFailure =
-                    isWorkspaceValidationFailure(repairErr) ? repairErr : null;
-                  finalizeBranchMetadata = {
-                    executionWorkspaceId: branchInspection.workspaceRecord.id,
-                    ...initialManagedGitWorktreeBranch,
-                  };
-                  finalizeBranchRepairMetadata = {
-                    attempted: true,
-                    succeeded: false,
-                    initial: initialManagedGitWorktreeBranch,
-                    reason:
-                      repairErr instanceof Error
-                        ? repairErr.message
-                        : String(repairErr),
-                  };
-                  await workspaceOperationRecorder.recordOperation({
-                    phase: "workspace_finalize",
-                    cwd: executionWorkspace.cwd,
-                    metadata: {
-                      adapterType: agent.adapterType,
-                      executionTargetKind: executionTarget?.kind ?? "local",
-                      ...metadata,
-                      managedGitWorktreeBranch: finalizeBranchMetadata,
-                      managedGitWorktreeBranchRepair:
-                        finalizeBranchRepairMetadata,
-                      ...(workspaceValidationFailure?.resultJson
-                        ? {
-                            workspaceValidation:
-                              workspaceValidationFailure.resultJson
-                                .workspaceValidation ??
-                              workspaceValidationFailure.resultJson,
-                          }
-                        : {}),
-                    },
-                    run: async () => ({
-                      status: "failed",
-                      stderr: `Managed git worktree branch check failed: ${repairErr instanceof Error ? repairErr.message : String(repairErr)}\n`,
-                    }),
-                  });
-                  adapterFinalizeOutcome = "failed";
-                  throw repairErr;
-                }
-
-                const repairedInspection =
-                  await inspectManagedGitWorktreeBranch({
-                    worktreePath: inspection.worktreePath,
-                    expectedBranchName: repairedExpectedBranchName,
-                    repoRoot: inspection.repoRoot,
-                  });
-                finalizeBranchRepairMetadata = {
-                  attempted: true,
-                  succeeded: repairedInspection.valid,
-                  initial: initialManagedGitWorktreeBranch,
-                  repaired:
-                    formatManagedGitWorktreeBranchInspection(
-                      repairedInspection,
-                    ),
-                };
-                inspection = repairedInspection;
-              }
-
-              const managedGitWorktreeBranch =
-                formatManagedGitWorktreeBranchInspection(inspection);
-              finalizeBranchMetadata = {
-                executionWorkspaceId: branchInspection.workspaceRecord.id,
-                ...managedGitWorktreeBranch,
-              };
-              if (!inspection.valid) {
-                const workspaceValidationFingerprint =
-                  fingerprintFinalizeWorkspaceBranchValidation({
-                    issueId: issueRef?.id ?? null,
-                    executionWorkspaceId: branchInspection.workspaceRecord.id,
-                    inspection: managedGitWorktreeBranch,
-                  });
-                await workspaceOperationRecorder.recordOperation({
-                  phase: "workspace_finalize",
-                  cwd: executionWorkspace.cwd,
-                  metadata: {
-                    adapterType: agent.adapterType,
-                    executionTargetKind: executionTarget?.kind ?? "local",
-                    ...metadata,
-                    managedGitWorktreeBranch: finalizeBranchMetadata,
-                    ...(finalizeBranchRepairMetadata
-                      ? {
-                          managedGitWorktreeBranchRepair:
-                            finalizeBranchRepairMetadata,
-                        }
-                      : {}),
-                  },
-                  run: async () => ({
-                    status: "failed",
-                    stderr: `Managed git worktree branch check failed: ${inspection.reason ?? "unknown branch mismatch"}\n`,
-                  }),
-                });
-                adapterFinalizeOutcome = "failed";
-                throw new WorkspaceValidationFailure(
-                  `Execution workspace ${branchInspection.workspaceRecord.id} expected git worktree branch "${inspection.expectedBranchName}" at "${inspection.worktreePath}", but ${inspection.reason ?? "the checked-out branch could not be verified"}. Record a sanctioned execution-workspace branch transition or restore the workspace branch before completing the run.`,
-                  {
-                    workspaceValidation: {
-                      reason: "git_worktree_branch_incoherence",
-                      fingerprint: workspaceValidationFingerprint,
-                      adapterType: agent.adapterType,
-                      issueId: issueRef?.id ?? null,
-                      issueIdentifier: issueRef?.identifier ?? null,
-                      persistedExecutionWorkspaceId:
-                        branchInspection.workspaceRecord.id,
-                      executionWorkspaceCwd: executionWorkspace.cwd,
-                      managedGitWorktreeBranch: finalizeBranchMetadata,
-                    },
-                  },
-                );
-              }
-            }
-          }
-          await workspaceOperationRecorder.recordOperation({
-            phase: "workspace_finalize",
-            cwd: executionWorkspace.cwd,
-            metadata: {
-              adapterType: agent.adapterType,
-              executionTargetKind: executionTarget?.kind ?? "local",
-              ...metadata,
-              ...(finalizeBranchMetadata
-                ? { managedGitWorktreeBranch: finalizeBranchMetadata }
-                : {}),
-              ...(finalizeBranchRepairMetadata
-                ? {
-                    managedGitWorktreeBranchRepair:
-                      finalizeBranchRepairMetadata,
-                  }
-                : {}),
-            },
-            run: async () => ({ status }),
-          });
-          // Only mark the outcome after the row landed, so a transient write
-          // failure on the succeeded path can still be recovered by recording
-          // finalize=failed from the catch path below.
-          adapterFinalizeOutcome = status;
-        };
-
-        const usageRecorder = await createRunUsageRecorder(db, { companyId: run.companyId, runId: run.id, adapterType: agent.adapterType });
-        persistUsageCaptureFailure = usageRecorder.persistFailure;
-        let adapterResult: AdapterExecutionResult;
-        const runGoalControlRequestId = readNonEmptyString(
-          context.goalControlRequestId,
-        );
-        try {
-          if (nativeRuntimeResolution.kind === "native") {
-            if (!nativeExecution || !nativeRunnerInstanceId)
-              throw new Error("native_runtime_selection_not_persisted");
-            const expectedNativeMcpDigest =
-              "runtimeContext" in nativeExecution &&
-              nativeExecution.runtimeContext.mcp.bindingId
-                ? nativeExecution.runtimeContext.mcp.digest
-                : null;
-            const nativeMcpServers = await buildPaperclipRuntimeMcpServers({
-              db,
-              agent,
-              runId: run.id,
-              expectedAssignmentDigest: expectedNativeMcpDigest,
-            });
-            if ("runtimeContext" in nativeExecution) {
-              if (nativeMcpServers.length > 1)
-                throw new Error(
-                  "native MCP realization must produce one aggregate gateway",
-                );
-              const server = nativeMcpServers[0] ?? null;
-              const digest = server?.connectionId.startsWith("assignment:")
-                ? server.connectionId.slice("assignment:".length)
-                : null;
-              if (digest && digest !== expectedNativeMcpDigest) {
-                throw new Error("native MCP assignment digest mismatch");
-              }
-            }
-            const nativeMcpServer = nativeMcpServers[0] ?? null;
-            let sessionGoalControl = parseNativeSessionGoalControl(
-              context.runnerGoalControl,
-            );
-            if (runGoalControlRequestId && !sessionGoalControl) {
-              throw new Error("session_goal_control_payload_invalid");
-            }
-            // A hard restart replays the heartbeat context, not a new user
-            // action. Do not repeat a completed create/replace/edit (which
-            // could reactivate or clear a goal that finished while detached).
-            const completedGoalControl =
-              sessionGoalControl !== null &&
-              taskKey !== null &&
-              (await isRunnerGoalActionCompleted(
-                db,
-                {
-                  companyId: agent.companyId,
-                  agentId: agent.id,
-                  issueId: taskKey,
-                },
-                sessionGoalControl.requestId,
-              ));
-            if (completedGoalControl) sessionGoalControl = null;
-            const nativeDispatchAtMs = Date.now();
-            const runCreatedAtMs = run.createdAt.getTime();
-            const runStartedAtMs = (run.startedAt ?? run.createdAt).getTime();
-            const wakeComments = Array.isArray(
-              parseObject(context.paperclipWake).comments,
-            )
-              ? (parseObject(context.paperclipWake).comments as unknown[])
-              : [];
-            const wakeIngressSpan = buildNativeWakeIngressSpan({
-              runCreatedAtMs,
-              wakeComments,
-              attestedQuestionResponseAtMs,
-            });
-            if (wakeIngressSpan)
-              nativeRunnerPreparationSpans.unshift(wakeIngressSpan);
-            nativeRunnerPreparationSpans.push(
-              ...buildNativeHeartbeatPreparationSpans({
-                runCreatedAtMs,
-                runStartedAtMs,
-                attemptStartedAtMs,
-                environmentAcquireStartedAtMs,
-                environmentRealizeEndedAtMs,
-                nativeDispatchAtMs,
-              }),
-            );
-            const guardedDispatch =
-              await dispatchResolvedInteractionContinuationWithAtomicGate(
-                (markDispatchStarted) => {
-                  return executePaperclipNativeSession({
-                    db,
-                    execution: nativeExecution,
-                    getFreshSessionHandoff: getNativeFreshSessionHandoff,
-                    refreshTools: context.refreshTools === true,
-                    conversationMode: isConversation(issueContext),
-                    turnTimeoutMs: Math.max(0, asNumber(runtimeConfig.timeoutSec, 0)) * 1_000,
-                    runnerInstanceId: nativeRunnerInstanceId,
-                    leaseOwner: runOptions.nativeLeaseOwner,
-                    restartRecovery: runOptions.nativeRestartRecovery,
-                    backend:
-                      options.nativeSessionBackendFactory?.(nativeExecution),
-                    useRunnerd: agent.adapterType === "paperclip_runner",
-                    adapterType: agent.adapterType,
-                    sessionGoalControl,
-                    resumeSessionGoalHeartbeat:
-                      context.resumeSessionGoalHeartbeat === true ||
-                      completedGoalControl,
-                    onGoalCheckpoint: async (snapshot) => {
-                      if (!taskKey) return;
-                      const params =
-                        attachPaperclipSessionMetadataToSessionParams(
-                          {
-                            ...runtimeSessionParamsForAdapter,
-                            sessionId: snapshot.identity.sessionId,
-                            cwd: executionWorkspace.cwd,
-                          },
-                          configuredModel,
-                          sessionConfigMetadata,
-                        )!;
-                      const displayId =
-                        snapshot.providerSessionId ?? snapshot.sessionId;
-                      await upsertTaskSession({
-                        companyId: agent.companyId,
-                        agentId: agent.id,
-                        adapterType: agent.adapterType,
-                        taskKey,
-                        sessionParamsJson: params,
-                        sessionDisplayId: displayId,
-                        lastRunId: run.id,
-                        lastError: null,
-                      });
-                      goalCheckpointSession.current = { params, displayId };
-                    },
-                    onLog,
-                    onEvent: onAdapterEvent,
-                    instructionWorkingCopy: nativeInstructionWorkingCopy(),
-
-                    onUsage: async receipt => { await usageRecorder.capture(receipt); },
-                    preparationSpans: nativeRunnerPreparationSpans,
-                    // Bootstrap with executable/home discovery while keeping
-                    // configured provider values and the server-selected
-                    // workspace boundary authoritative.
-                    managedGitHub: !useHostGitHub && githubSelection.configured,
-                    billingIdentity: managedAiRuntime ? { provider: managedAiRuntime.attribution.provider, biller: managedAiRuntime.attribution.provider === "openai" ? resolveManagedOpenAiBilling(managedAiRuntime.config.managedAiRouting)?.biller ?? managedAiRuntime.attribution.provider : managedAiRuntime.attribution.provider, billingType: managedAiRuntime.attribution.method === "subscription" ? "subscription_included" : "metered_api" } : undefined,
-                    managedAiCredentialIdentity: managedAiRuntime?.identity,
-                    managedAiCredentialHome: managedAiRuntime ? String((managedAiRuntime.config.env as Record<string, unknown>).CODEX_HOME) : undefined,
-                    dotWorkspaceRoot: nativeExecution.provider.kind === "openai_dot" && resolvedConfig.dotWorkspaceAccess === true ? executionWorkspace.cwd : undefined,
-                    runnerEnvironment: {
-                      ...configuredEnvironmentProjection(configuredTaskEnvironment),
-                      ...buildNativeProviderEnvironment(
-                        adapterEnv,
-                        process.env,
-                        executionWorkspace.cwd,
-                      ),
-                      ...buildAgentIdentityEnv(agentIdentity),
-                      ...(instructionCopy && isAgentDirectoryCopy(instructionCopy) ? { AGENT_HOME: instructionCopy.executionRoot } : {}),
-                      ...(nativeMcpServer
-                        ? {
-                            PAPERCLIP_NATIVE_MCP_NAME: nativeMcpServer.name,
-                            PAPERCLIP_NATIVE_MCP_URL: nativeMcpServer.url,
-                            PAPERCLIP_NATIVE_MCP_TOKEN: nativeMcpServer.token,
-                          }
-                        : {}),
-                      ...(providerTraceCapture
-                        ? {
-                            PAPERCLIP_PROVIDER_TRACE_PATH:
-                              providerTraceCapture.path,
-                            PAPERCLIP_PROVIDER_TRACE_MAX_BYTES: String(
-                              PROVIDER_TRACE_MAX_BYTES,
-                            ),
-                          }
-                        : {}),
-                    },
-                    runnerExecutionTarget: executionTarget,
-                    runnerIngressAuthorized: isRunnerIngressAuthorized(
-                      nativeRuntimeResolution,
-                    ),
-                    runnerPublicUrl:
-                      runtimeEnv.PAPERCLIP_RUNNER_PUBLIC_URL?.trim() || null,
-                    runnerCaBundlePath:
-                      runtimeEnv.PAPERCLIP_RUNNER_CA_BUNDLE_PATH?.trim() ||
-                      null,
-                    runnerRemoteBinaryPath:
-                      runtimeEnv.PAPERCLIP_RUNNER_REMOTE_BINARY_PATH?.trim() ||
-                      null,
-                    runnerRemoteCodexPath:
-                      runtimeEnv.PAPERCLIP_RUNNER_REMOTE_CODEX_PATH?.trim() ||
-                      null,
-                    runnerRemoteCodexNpmSpec:
-                      runtimeEnv.PAPERCLIP_RUNNER_REMOTE_CODEX_NPM_SPEC?.trim() ||
-                      null,
-                    runnerRemoteProviderPackPath:
-                      runtimeEnv.PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH?.trim() ||
-                      null,
-                    stopTaskForReassignment: async (target) => {
-                      await settleLiveRunnerGoalBeforeInterrupt(db, target);
-                      if (!target.runId) return;
-                      const prior = await getRun(target.runId);
-                      if (!prior || prior.companyId !== target.companyId || prior.agentId !== target.agentId) {
-                        throw conflict("Reassignment run binding changed");
-                      }
-                      const stopped = await cancelRunInternal(target.runId, "Cancelled for task reassignment", {
-                        errorCode: "issue_reassigned", suppressImmediateRecovery: true,
-                        resultJson: { reassignmentStopConfirmed: true },
-                      });
-                      if (stopped && ["running", "queued", "scheduled_retry"].includes(stopped.status)) {
-                        throw conflict("The previous run did not stop; reassignment was not applied");
-                      }
-                    },
-                    enqueueWakeup,
-                    syncIssueExternalObjects: externalObjectService(db, {
-                      pluginWorkerManager: options.pluginWorkerManager,
-                      enabled: async () => (await instanceSettings.getExperimental()).enableExternalObjects === true,
-                    }).syncIssueSafely,
-                    onSpawn: async (meta) => {
-                      markDispatchStarted();
-                      await persistRunProcessMetadata(run.id, { ...meta, targetKind: executionTarget?.kind ?? "local" });
-                    },
-                  });
-                },
-              );
-            if (!guardedDispatch.dispatched) return;
-            nativeDispatchStarted = true;
-            adapterResult = await guardedDispatch.resultPromise;
-          } else {
-            const interactionId = readNonEmptyString(context.interactionId);
-            const legacyQuestionResponse =
-              issueRef &&
-              interactionId &&
-              readNonEmptyString(context.interactionKind) ===
-                "ask_user_questions" &&
-              readNonEmptyString(context.interactionStatus) === "answered"
-                ? await materializeLegacyQuestionResponseWakeProjection({
-                    db,
-                    companyId: agent.companyId,
-                    issueId: issueRef.id,
-                    runId: run.id,
-                    agentId: agent.id,
-                    interactionId,
-                  })
-                : null;
-            // Do not write the answer projection back to `context`: legacy
-            // adapters need it in their prompt, but the authoritative answers
-            // remain on the interaction instead of being duplicated in the
-            // heartbeat run snapshot.
-            const adapterContext: Record<string, unknown> = {
-              ...context,
-              ...(legacyQuestionResponse
-                ? {
-                    [PAPERCLIP_WAKE_PAYLOAD_KEY]: {
-                      ...parseObject(context[PAPERCLIP_WAKE_PAYLOAD_KEY]),
-                      questionResponse: legacyQuestionResponse,
-                    },
-                  }
-                : {}),
-            };
-            const runtimeTools = createAdapterRuntimeToolAccess({
-              agentId: agent.id,
-              companyId: agent.companyId,
-              runId: run.id,
-              responsibleUserId: run.responsibleUserId,
-            });
-            if (!runtimeTools) {
-              logger.warn(
-                {
-                  companyId: agent.companyId,
-                  agentId: agent.id,
-                  runId: run.id,
-                },
-                "runtime connection tools could not be delivered",
-              );
-            }
-            const runtimeMcpServers = await buildPaperclipRuntimeMcpServers({
-              db,
-              agent,
-              runId: run.id,
-            });
-            const runtimeToolDelivery =
-              adapter.runtimeToolDelivery ?? "invocation_context";
-            if (runtimeTools && runtimeToolDelivery === "native_mcp") {
-              runtimeMcpServers.unshift({
-                name: "Paperclip connections",
-                url: runtimeTools.mcpEndpoint,
-                token: runtimeTools.bearerToken,
-                connectionId: "paperclip-runtime-tools",
-              });
-            }
-            if (authToken && configuredPaperclipApiBaseUrl() && issueRef) {
-              runtimeMcpServers.unshift({ name: "Paperclip projects", url: `${paperclipApiBaseUrl()}/api/mcp/project-tools`,
-                token: authToken, connectionId: "paperclip-project-tools" });
-            }
-            const runtimeMcp = createAdapterRuntimeMcpAccess(runtimeMcpServers);
-            if (runtimeTools && runtimeToolDelivery === "invocation_context") {
-              adapterContext.paperclipRuntimeTools = runtimeTools;
-            }
-            const managedMcpConfig = await createManagedMcpRunConfig({
-              db,
-              agent,
-              runId: run.id,
-              config: runtimeConfig,
-              projectId: issueRef?.projectId ?? null,
-              issueId: issueRef?.id ?? null,
-            });
-            if (managedMcpConfig) {
-              adapterContext.paperclipManagedMcp = managedMcpConfig;
-            }
-            const guardedDispatch =
-              await dispatchResolvedInteractionContinuationWithAtomicGate(
-                (markDispatchStarted) => {
-                  legacyAdapterEntered = true;
-                  return withAdapterExecutionPhase(executionPhaseContext, "adapter_execution", () => adapter.execute({
-                    getFreshSessionHandoff,
-                    agentIdentity,
-                    runId: run.id,
-                    agent,
-                    runtime: runtimeForAdapter,
-                    config: runtimeConfig,
-                    context: adapterContext,
-                    executionContinuation: executionContinuation ?? null,
-                    runtimeCommandSpec:
-                      adapter.getRuntimeCommandSpec?.(runtimeConfig) ?? null,
-                    executionTarget,
-                    executionTransport: remoteExecution
-                      ? {
-                          remoteExecution: remoteExecution as unknown as Record<
-                            string,
-                            unknown
-                          >,
-                        }
-                      : undefined,
-                    runtimeMcp,
-                    runtimeTools,
-                    onLog,
-                    onMeta: onAdapterMeta,
-                    onEvent: onAdapterEvent,
-                    onUsage: async receipt => { await usageRecorder.capture(receipt); },
-                    onExecutionPhase: executionControl.phases.enter,
-                    startupTraceContext: getStartupTraceContext(),
-                    onRuntimeProgress: async (progress) => {
-                      await recordCurrentHeartbeatRunRuntimeProgress(
-                        run,
-                        progress,
-                        issueId,
-                      );
-                    },
-                    onProviderStopped: collectStoppedInstructions,
-                    onDispatch: markDispatchStarted,
-                    signal: executionControl.controller.signal,
-                    ...(executionTarget?.kind === "remote" && executionTarget.transport === "sandbox" ? {
-                      stopRemoteStartup: async () => {
-                        // Scope comes from the running host invocation, never agent
-                        // config. Keep adapter ownership until setup has unwound.
-                        if (!executionControl.controller.signal.aborted) {
-                          throw new Error("Remote startup stop requires a cancelled run");
-                        }
-                        const release = await envOrchestrator.releaseForRun({
-                          heartbeatRunId: run.id,
-                          companyId: agent.companyId,
-                          agentId: agent.id,
-                          status: "released",
-                          providerResourceDisposition: "stop_and_retain",
-                          cancelActiveWork: true,
-                        });
-                        if (release.errors.length || !await remoteExecutionHasStopped(db, agent.companyId, run.id)) {
-                          throw new Error("Could not verify remote startup stopped");
-                        }
-                      },
-                    } : {}),
-                    onCancellationReady: async () => {
-                      await registerAdapterExecutionControl(run.id, executionControl);
-                      const current = await getRun(run.id);
-                      if (!current || isHeartbeatRunTerminalStatus(current.status)) {
-                        executionControl.controller.abort(new Error("Run stopped before provider startup"));
-                      }
-                    },
-                    onSpawn: async (meta) => {
-                      markDispatchStarted();
-                      await persistRunProcessMetadata(run.id, {
-                        pid: meta.pid,
-                        processGroupId:
-                          "processGroupId" in meta &&
-                          typeof meta.processGroupId === "number"
-                            ? meta.processGroupId
-                            : null,
-                        startedAt: meta.startedAt,
-                      });
-                    },
-                    authToken: authToken ?? undefined,
-                  }));
-                },
-              );
-            if (!guardedDispatch.dispatched) return;
-            adapterResult = await guardedDispatch.resultPromise;
-          }
-          adapterResult = identityRedactor.redact(adapterResult);
-          if (run.runtimeMode === "legacy" && hasWorkspaceRestoreFailure(adapterResult.resultJson)
-              && executionTarget?.kind === "remote" && executionTarget.transport === "sandbox") {
-            requiredWorkspaceRestoreEvidence = {
-              workspaceRestoreFailure: adapterResult.resultJson!.workspaceRestoreFailure,
-              ...(adapterResult.resultJson?.workspaceRestoreDiagnostic ? { workspaceRestoreDiagnostic: adapterResult.resultJson.workspaceRestoreDiagnostic } : {}),
-            };
-            // Retention is the fallback even if recording this receipt fails.
-            providerResourceDispositionForRun = "stop_and_retain";
-            await recordLegacyWorkspaceRestoreFailure(db, run, requiredWorkspaceRestoreEvidence);
-          }
-          for (const stream of ["stdout", "stderr"] as const) {
-            const tail = identityRedactor.finish(stream);
-            if (tail) await appendIdentityRedactedLog(stream, tail);
-          }
-          if (instructionSave) adapterResult.resultJson = { ...adapterResult.resultJson, instructionSave };
-
-          if (parseObject(adapterResult.executionRecovery).providerWorkStarted !== false) {
-            const captured = await usageRecorder.complete(adapterResult);
-            adapterResult = { ...adapterResult, ...captured, usageComplete: captured.complete };
-          } else {
-            // Stop may already own the terminal result. Preserve its metadata
-            // while durably recording the proof needed to release admission.
-            await db.update(heartbeatRuns).set({ costAccountingPending: true,
-              usageJson: sql`coalesce(${heartbeatRuns.usageJson}, '{}'::jsonb) || '{"accountingProviderWorkStarted":false}'::jsonb`,
-            }).where(and(eq(heartbeatRuns.id, run.id), isNull(heartbeatRuns.costAccountedAt)));
-          }
-          adapterResult = applyWorkspaceRestoreFailure(adapterResult);
-          // A returned result can include a failed restore. Keep the workspace
-          // barrier closed until required files have been restored.
-          // If recording the barrier itself fails, propagate as a run failure
-          // rather than silently leaving dependents stranded behind a missing
-          // finalize row.
-          const completeWorkspace = async (ownership?: NativeWorkspaceFinalizationOwnership) => {
-            try {
-              if (nativeWorkspaceSync) {
-                const exported = await db.select({ id: workspaceOperations.id }).from(workspaceOperations).where(and(
-                  eq(workspaceOperations.companyId, run.companyId),
-                  eq(workspaceOperations.heartbeatRunId, run.id),
-                  eq(workspaceOperations.phase, "workspace_finalize"),
-                  eq(workspaceOperations.status, "succeeded"),
-                )).limit(1);
-                if (exported.length) adapterFinalizeOutcome = "succeeded";
-                else await restoreNativeWorkspaceBestEffort({
-                  db, runId: run.id, assertOwnership: ownership?.assertHeld,
-                  restore: () => nativeWorkspaceSync!.restoreWorkspace(ownership?.assertHeld),
-                });
-              }
-              await ownership?.assertHeld();
-              await db
-                .update(heartbeatRuns)
-                .set({ executionControlDeadlineAt: new Date(Date.now() + 60_000) })
-                .where(
-                  and(
-                    eq(heartbeatRuns.id, run.id),
-                    eq(heartbeatRuns.status, "running"),
-                  ),
-                );
-              const workspaceFinalizeStatus = hasWorkspaceRestoreFailure(adapterResult.resultJson) ? "failed" : "succeeded";
-              await recordWorkspaceFinalize(workspaceFinalizeStatus);
-              if (adapterResult.nativeFinalization) {
-                adapterResult.nativeFinalization.workspaceFinalizeStatus =
-                  workspaceFinalizeStatus;
-                try {
-                  const finalized = await finalizeNativeRun({
-                    db,
-                    runId: run.id,
-                    workspaceFinalizeStatus,
-                    preserveProviderAttempt: Boolean(nativeWorkspaceSync),
-                  });
-                  await dispatchPendingNativeStatusWakeups({
-                    companyId: run.companyId,
-                  });
-                  if (finalized.phase === "committed") {
-                    await nativeWorkspaceSync?.cleanup();
-                  }
-                } catch (finalizeErr) {
-                  logger.warn(
-                    { err: finalizeErr, runId: run.id },
-                    "native result persisted but finalization did not apply; the reconciliation loop will retry",
-                  );
-                }
-              }
-            } catch (error) {
-              if (ownership) {
-                await ownership.assertHeld();
-                await recordWorkspaceFinalize("failed");
-              }
-              throw error;
-            }
-          };
-          if (nativeWorkspaceSync) {
-            const owned = await withNativeWorkspaceFinalizationOwnership({
-              db, companyId: run.companyId, runId: run.id,
-            }, completeWorkspace);
-            if (!owned.acquired) throw new NativeWorkspaceFinalizationBusyError();
-          } else {
-            await completeWorkspace();
-          }
-        } catch (adapterErr) {
-          if (adapterErr instanceof NativeCancellationPendingRecoveryError) {
-            // Durable cancellation is settled by the outer recovery handler;
-            // it does not imply a failed workspace or a persisted run result.
-            throw adapterErr;
-          }
-          if (adapterErr instanceof NativeWorkspaceFinalizationBusyError
-            || adapterErr instanceof NativeWorkspaceFinalizationOwnershipLostError) {
-            nativeWorkspaceFinalizeScheduled = true;
-            throw adapterErr;
-          }
-          if (adapterErr instanceof NativeControllerDetachedForRestartError) {
-            // Preserve the provider and its run for the new controller. This
-            // also keeps generic teardown from terminalizing/releasing its lease.
-            nativeSessionResumeScheduled = true;
-            throw adapterErr;
-          }
-          if (adapterErr instanceof NativeRunnerOwnershipUnverifiedError) {
+        const runtimeSelection = await selectHeartbeatRuntime(db, {
+          run,
+          agent,
+          nativeRuntimeResolution,
+          task: {
+            issueRef,
+            issueContext,
+            context,
+            executionContinuation,
+            safeWakeComments,
+            safeWakeCommentContext,
+            paperclipWakePayload,
+            acceptedPlanContinuationWake,
+          },
+          session: {
+            persistedNativeExecutionInput,
+            persistedRunnerProfile,
+            taskSessionCredentialCompatible,
+            taskSessionDecodedParams,
+            taskSessionForRun,
+            isFailedChatRunRetry,
+            getFreshSessionHandoff,
+          },
+          workspace: {
+            persistedExecutionWorkspace,
+            executionWorkspace,
+            executionTarget,
+            activeEnvironmentLease,
+            isDotRun,
+            projectRepositoryPaths,
+          },
+          config: {
+            runtimeConfig,
+            runtimeSkillEntries,
+            runScopedMentionedSkillKeys,
+            instructionCopy,
+            agentIdentity,
+            issueAssigneeOverrides,
+            resolvedConfig,
+            managedAiRuntime,
+          },
+          recovery: runOptions,
+          trace: { providerTraceRequested, providerTraceCapture },
+          issuesSvc,
+          runtimeEnv,
+          beforeNativeRuntimeSelection: options.beforeNativeRuntimeSelection,
+          onAdapterEvent,
+          onNativeLifecycleSelected: (telemetry) => {
+            nativeLifecycleTelemetryForRun = telemetry;
+          },
+          onProviderResourceDisposition: (disposition) => {
+            providerResourceDispositionForRun = disposition;
+          },
+          onNativeOwnershipHeld: () => {
             nativeOwnershipHeld = true;
-            throw adapterErr;
-          }
-          await db
-            .update(heartbeatRuns)
-            .set({ executionControlDeadlineAt: new Date(Date.now() + 60_000) })
-            .where(
-              and(
-                eq(heartbeatRuns.id, run.id),
-                eq(heartbeatRuns.status, "running"),
-              ),
-            );
-          if (
-            issueRef &&
-            context.resumeSessionGoalHeartbeat === true &&
-            !runGoalControlRequestId
-          ) {
-            await blockRunnerGoalRecovery(
-              db,
-              {
-                companyId: run.companyId,
-                issueId: issueRef.id,
-                agentId: agent.id,
-                adapterType: agent.adapterType,
-              },
-              "provider_session_goal_recovery_failed",
-            ).catch(() => undefined);
-          }
-          if (issueRef && runGoalControlRequestId) {
-            await failRunnerGoalAction(
-              db,
-              {
-                companyId: run.companyId,
-                issueId: issueRef.id,
-                agentId: agent.id,
-                adapterType: agent.adapterType,
-              },
-              runGoalControlRequestId,
-              adapterErr instanceof Error
-                ? adapterErr.message
-                : "session_goal_control_failed",
-            ).catch(() => undefined);
-          }
-          const nativeResumeScheduled =
-            nativeRuntimeResolution.kind === "native"
-              ? await db
-                  .select({
-                    phase: nativeRunFinalizations.phase,
-                    resultId: nativeRunFinalizations.resultId,
-                  })
-                  .from(nativeRunFinalizations)
-                  .where(eq(nativeRunFinalizations.runId, run.id))
-                  .limit(1)
-                  .then(
-                    (rows) =>
-                      rows[0]?.phase === "retryable_failure" &&
-                      rows[0]?.resultId === null,
-                  )
-              : false;
-          if (nativeResumeScheduled) {
-            nativeSessionResumeScheduled = true;
-            throw new NativeSessionResumeScheduledError(adapterErr);
-          }
-          // Adapter (or its restore finally) threw — or the finalize record
-          // write itself threw. Either way the workspace may be in a partial
-          // state. Best-effort record finalize=failed so the dependent readiness
-          // check keeps the gate closed instead of waking on stale local state,
-          // and surface the original error to the caller.
-          try {
-            await recordWorkspaceFinalize("failed", {
-              errorMessage:
-                adapterErr instanceof Error
-                  ? adapterErr.message
-                  : String(adapterErr),
-            });
-          } catch (recordErr) {
-            logger.warn(
-              {
-                err: recordErr,
-                runId: run.id,
-                executionWorkspaceId: persistedExecutionWorkspace?.id ?? null,
-              },
-              "failed to record workspace_finalize=failed operation; dependents may remain gated",
-            );
-          }
-          if (nativeRuntimeResolution.kind === "native") {
-            const proposedResult = await db
-              .select({ resultId: nativeRunFinalizations.resultId })
-              .from(nativeRunFinalizations)
-              .where(eq(nativeRunFinalizations.runId, run.id))
-              .limit(1)
-              .then((rows) => rows[0]?.resultId ?? null);
-            if (proposedResult && nativeWorkspaceSync) {
-              const workspaceFailureMessage =
-                adapterErr instanceof Error ? adapterErr.message : "";
-              const unrecoverable =
-                workspaceFailureMessage ===
-                  "workspace_sync_out_unrecoverable" ||
-                workspaceFailureMessage.includes("daytona_sandbox_not_found");
-              const failure = await recordNativeFinalizationFailure({
-                db,
-                runId: run.id,
-                error: new Error(
-                  unrecoverable
-                    ? "native_workspace_sync_out_unrecoverable"
-                    : "native_workspace_sync_out_failed",
-                ),
-                projectRunStatus: true,
-                failureScope: "workspace",
-                permanent: unrecoverable,
-              });
-              nativeWorkspaceFinalizeScheduled = true;
-              throw new NativeWorkspaceFinalizeScheduledError(
-                adapterErr,
-                failure.phase === "terminal_failure",
-                unrecoverable
-                  ? "workspace_sync_out_unrecoverable"
-                  : "workspace_sync_out_failed",
-              );
-            }
-            try {
-              await finalizeNativeRun({
-                db,
-                runId: run.id,
-                workspaceFinalizeStatus: "failed",
-              });
-              await dispatchPendingNativeStatusWakeups({
-                companyId: run.companyId,
-              });
-            } catch (finalizeErr) {
-              logger.warn(
-                { err: finalizeErr, runId: run.id },
-                "native result could not be marked workspace_failed; the reconciliation loop will retry persisted results",
-              );
-            }
-          }
-          throw adapterErr;
-        } finally {
-          try {
-            await revokeHeartbeatRunGatewayTokens({
-              db,
-              companyId: agent.companyId,
-              runId: run.id,
-            });
-          } catch (revokeErr) {
-            logger.warn(
-              { err: revokeErr, runId: run.id, companyId: agent.companyId },
-              "failed to revoke heartbeat-run MCP gateway tokens",
-            );
-          }
-          await nativeInstructionReservation?.release();
-          await withAdapterExecutionPhase(executionPhaseContext, "instruction_cleanup", releaseInstructionCopy);
-        }
+          },
+          stopControllerLease: () => controllerLease.stop(),
+        });
+        if (!runtimeSelection.selected) return;
+        const { nativeExecution, nativeRunnerInstanceId, getNativeFreshSessionHandoff } = runtimeSelection;
+        nativeWorkspaceSync = runtimeSelection.nativeWorkspaceSync;
+        const execution = await executeHeartbeatRuntime(db, {
+          run, agent, options,
+          task: {
+            issueRef,
+            issueContext,
+            context,
+            issueId,
+            taskKey,
+            executionContinuation,
+          },
+          runtime: {
+            nativeRuntimeResolution,
+            nativeExecution,
+            nativeRunnerInstanceId,
+            adapter,
+            runtimeForAdapter,
+            getNativeFreshSessionHandoff,
+            getFreshSessionHandoff,
+            runOptions,
+          },
+          workspace: {
+            persistedExecutionWorkspace,
+            executionWorkspace,
+            executionTarget,
+            workspaceOperationRecorder,
+            nativeWorkspaceSync,
+            workspaceRestoreSource,
+            remoteExecution,
+          },
+          config: {
+            runtimeConfig,
+            resolvedConfig,
+            resolvedInstanceSettings,
+            configuredTaskEnvironment,
+            adapterEnv,
+            agentIdentity,
+            managedAiRuntime,
+            runtimeEnv,
+            useHostGitHub,
+            githubSelection,
+          },
+          session: {
+            runtimeSessionParamsForAdapter,
+            configuredModel,
+            sessionConfigMetadata,
+            goalCheckpointSession,
+          },
+          instructions: {
+            nativeInstructionWorkingCopy,
+            collectStoppedInstructions,
+            nativeInstructionReservation,
+            releaseInstructionCopy,
+            get instructionCopy() { return instructionCopy; },
+            getInstructionSave: () => instructionSave,
+          },
+          trace: {
+            providerTraceCapture,
+            nativeRunnerPreparationSpans,
+            attestedQuestionResponseAtMs,
+            attemptStartedAtMs,
+            environmentAcquireStartedAtMs,
+            environmentRealizeEndedAtMs,
+          },
+          control: {
+            executionControl,
+            executionPhaseContext,
+            dispatchResolvedInteractionContinuationWithAtomicGate,
+          },
+          output: {
+            identityRedactor,
+            appendIdentityRedactedLog,
+            onLog,
+            onAdapterEvent,
+            onAdapterMeta,
+          },
+          services: {
+            executionWorkspacesSvc,
+            instanceSettings,
+            envOrchestrator,
+            upsertTaskSession,
+            getRun,
+            cancelRunInternal,
+            enqueueWakeup,
+            persistRunProcessMetadata,
+            recordCurrentHeartbeatRunRuntimeProgress,
+            dispatchPendingNativeStatusWakeups,
+          },
+          effects: {
+            onUsageCaptureReady: (value) => { persistUsageCaptureFailure = value; },
+            onNativeDispatchStarted: () => { nativeDispatchStarted = true; },
+            onLegacyAdapterEntered: () => { legacyAdapterEntered = true; },
+            onNativeWorkspaceFinalizeScheduled: () => { nativeWorkspaceFinalizeScheduled = true; },
+            onNativeSessionResumeScheduled: () => { nativeSessionResumeScheduled = true; },
+            onNativeOwnershipHeld: () => { nativeOwnershipHeld = true; },
+            onProviderResourceDisposition: (value) => { providerResourceDispositionForRun = value; },
+            onWorkspaceRestoreFailure: (evidence) => { requiredWorkspaceRestoreEvidence = evidence; },
+          },
+        });
+        if (!execution.dispatched) return;
+        const { adapterResult } = execution;
         // Reconcile the referenced-project set against the real remote staging outcome. A referenced
         // project can pass authorization and clone locally at run prep, then fail to stage into the
         // sandbox during execution. The run-prep observability above counts such a project as synced,
@@ -8700,650 +4958,20 @@ export function heartbeatService(
             }
           }
         }
-        const processCancellation =
-          processRunCancellationSettlements.get(run.id) ??
-          failedProcessRunCancellations.get(run.id);
-        await processCancellation?.settled;
-        let outcome: RunSessionOutcome;
-        const latestRun = await getRun(run.id);
-        if (isHeartbeatRunTerminalStatus(latestRun?.status)) {
-          outcome = latestRun.status;
-        } else if (executionControl.controller.signal.aborted) {
-          outcome = "cancelled";
-        } else if (adapterResult.nativeFinalization) {
-          const nativeTerminal =
-            adapterResult.nativeFinalization.terminal.runTerminalState;
-          outcome =
-            nativeTerminal === "succeeded"
-              ? "succeeded"
-              : nativeTerminal === "cancelled"
-                ? "cancelled"
-                : "failed";
-        } else if (adapterResult.timedOut) {
-          outcome = "timed_out";
-        } else if (adapterResult.resultJson?.status === "cancelled") {
-          outcome = "cancelled";
-        } else if (
-          (adapterResult.exitCode ?? 0) === 0 &&
-          !adapterResult.errorMessage &&
-          !adapterResult.signal &&
-          !processCancellation?.failed
-        ) {
-          outcome = "succeeded";
-        } else {
-          outcome = "failed";
-        }
-
-        const nextSessionState = resolveNextSessionState({
-          adapterType: agent.adapterType,
-          codec: sessionCodec,
-          adapterResult,
-          outcome,
-          previousParams: previousSessionParams,
-          previousDisplayId: runtimeForAdapter.sessionDisplayId,
-          previousLegacySessionId: runtimeForAdapter.sessionId,
-        });
-        const rawUsage = normalizeUsageTotals(adapterResult.usage);
-        const sessionUsageResolution = await resolveNormalizedUsageForSession({
-          agentId: agent.id,
-          runId: run.id,
-          sessionId:
-            nextSessionState.displayId ?? nextSessionState.legacySessionId,
-          rawUsage,
-          usageBasis: adapterResult.usageBasis ?? null,
-        });
-        const normalizedUsage = sessionUsageResolution.normalizedUsage;
-        const runErrorMessage =
-          outcome === "cancelled"
-            ? redactCurrentUserText(latestRun?.error ?? adapterResult.errorMessage ?? "Cancelled", currentUserRedactionOptions)
-            : outcome === "succeeded"
-              ? null
-              : redactCurrentUserText(
-                  adapterResult.errorMessage ??
-                    (outcome === "timed_out" ? "Timed out" : "Adapter failed"),
-                  currentUserRedactionOptions,
-                );
-        const recordedResponsibleUserDenialCode =
-          normalizeResponsibleUserDenialCode(latestRun?.errorCode);
-        const runErrorCode =
-          outcome === "timed_out"
-            ? "timeout"
-            : outcome === "cancelled"
-              ? (latestRun?.errorCode ?? "cancelled")
-              : outcome === "failed"
-                ? (adapterResult.errorCode ??
-                  recordedResponsibleUserDenialCode ??
-                  "adapter_failed")
-                : null;
-
-        let logSummary: {
-          bytes: number | null;
-          sha256?: string | null;
-          compressed: boolean;
-        } | null = null;
-        if (handle) {
-          logSummary = await runLogStore.finalize(handle);
-        }
-        const finalLogBytes = logSummary?.bytes;
-        if (outputProgressState.pending && typeof finalLogBytes === "number") {
-          outputProgressState.pending.bytes = finalLogBytes;
-        }
-        await flushOutputProgress({ force: true });
-
-        if (providerTraceCapture) {
-          try {
-            await traceStore.finalize(run.id, run.companyId);
-            providerTraceFinalized = true;
-          } catch (error) {
-            logger.warn(
-              { error, runId: run.id },
-              "provider trace finalization failed without affecting run outcome",
-            );
-          }
-        }
-
-        const status =
-          outcome === "succeeded"
-            ? "succeeded"
-            : outcome === "cancelled"
-              ? "cancelled"
-              : outcome === "timed_out"
-                ? "timed_out"
-                : "failed";
-
-        const cacheAdjustedCostUsd = adapterResult.costUsdExact != null && adapterResult.cacheAdjustedCostUsd == null
-          ? null : resolveCacheAdjustedCostUsd(adapterResult);
-        const usageJson: Record<string, unknown> = {
-          accountingReceiptReady: adapterResult.usageComplete !== false,
-          costUsdExact: adapterResult.costUsdExact ?? null,
-          providerRequestId: adapterResult.providerRequestId ?? null,
-          ...(normalizedUsage ?? {}),
-          ...(adapterResult.usageByModel ? { usageByModel: adapterResult.usageByModel } : {}),
-          ...(rawUsage
-            ? {
-                rawInputTokens: rawUsage.inputTokens,
-                rawInputIncludesCached: false,
-                rawCachedInputTokens: rawUsage.cachedInputTokens,
-                rawOutputTokens: rawUsage.outputTokens,
-              }
-            : {}),
-          ...(sessionUsageResolution.derivedFromSessionTotals
-            ? { usageSource: "session_delta" }
-            : adapterResult.usageBasis === "per_run"
-              ? { usageSource: "per_run" }
-              : {}),
-          ...((nextSessionState.displayId ??
-          nextSessionState.legacySessionId)
-            ? {
-                persistedSessionId:
-                  nextSessionState.displayId ??
-                  nextSessionState.legacySessionId,
-              }
-            : {}),
-          sessionReused:
-            runtimeForAdapter.sessionId != null ||
-            runtimeForAdapter.sessionDisplayId != null,
-          taskSessionReused: taskSessionForRun != null,
-          freshSession:
-            runtimeForAdapter.sessionId == null &&
-            runtimeForAdapter.sessionDisplayId == null,
-          sessionRotated: sessionCompaction.rotate,
-          sessionRotationReason: sessionCompaction.reason,
-          configFreshness: configFreshnessResultMetadata,
-          provider:
-            readNonEmptyString(adapterResult.provider) ?? "unknown",
-          biller: resolveLedgerBiller(adapterResult),
-          model: readNonEmptyString(adapterResult.model) ?? "unknown",
-          ...(adapterResult.costUsd != null
-            ? { costUsd: adapterResult.costUsd }
-            : {}),
-          ...(cacheAdjustedCostUsd != null
-            ? { cacheAdjustedCostUsd }
-            : {}),
-          pricingProvenance: adapterResult.pricingProvenance,
-          costStatus: adapterResult.costStatus ?? resolveLedgerCostStatus({
-            costUsd: cacheAdjustedCostUsd ?? (adapterResult.costUsdExact != null ? Number(adapterResult.costUsdExact) : null),
-            billingType: normalizeLedgerBillingType(adapterResult.billingType),
-            inputTokens: normalizedUsage?.inputTokens ?? 0,
-            cachedInputTokens: normalizedUsage?.cachedInputTokens ?? 0,
-            outputTokens: normalizedUsage?.outputTokens ?? 0,
-          }),
-          billingType: normalizeLedgerBillingType(
-            adapterResult.billingType,
-          ),
-        };
-
-        const persistedResultJson = cancellationResultJson(latestRun ?? run, outcome, mergeHeartbeatRunResultJson(
-          mergeRunStopMetadataForAgent(agent, outcome, {
-            resultJson: mergeAdapterRecoveryMetadata({
-              resultJson: {
-                ...(adapterResult.nativeFinalization || outcome === "cancelled"
-                  ? parseObject(latestRun?.resultJson)
-                  : {}),
-                ...parseObject(adapterResult.resultJson),
-                ...(adapterResult.executionRecovery
-                  ? { executionRecovery: adapterResult.executionRecovery }
-                  : {}),
-                configFreshness: configFreshnessResultMetadata,
-              },
-              errorFamily: adapterResult.errorFamily ?? null,
-              retryNotBefore: adapterResult.retryNotBefore ?? null,
-            }),
-            errorCode: runErrorCode,
-            errorMessage: runErrorMessage,
-          }),
-          adapterResult.summary ?? null,
-        ), runErrorCode, runErrorMessage);
-
-        const ledgerScope = runLedgerScope;
-        const finalRunPatch: Partial<typeof heartbeatRuns.$inferInsert> = {
-          // Accounting must acknowledge even a proven pre-provider failure:
-          // that transaction releases the reservation without creating a charge.
-          costAccountingPending: true,
-          finishedAt: new Date(),
-          error: runErrorMessage,
-          errorCode: runErrorCode,
-          exitCode: adapterResult.exitCode,
-          signal: adapterResult.signal,
-          usageJson: { ...usageJson, ledgerScope },
-          resultJson: persistedResultJson,
-          sessionIdAfter:
-            nextSessionState.displayId ?? nextSessionState.legacySessionId,
-          stdoutExcerpt,
-          stderrExcerpt,
-          logBytes: logSummary?.bytes,
-          logSha256: logSummary?.sha256,
-          logCompressed: logSummary?.compressed ?? false,
-        };
-        const persistedRunWrite = await setRunStatusIfRunning(
-          run.id,
-          status,
-          finalRunPatch,
-          { adapterErrorMeta: adapterResult.errorMeta, secretValues: readFailureReportSecrets() },
-        );
-        let persistedRun: typeof heartbeatRuns.$inferSelect | null =
-          persistedRunWrite.run;
-        if (!persistedRunWrite.updated) {
-          persistedRun = null;
-          // Native reconciliation can commit and project the terminal status in
-          // the narrow window between adapter completion and this live write.
-          // The status is authoritative, but it must not make us discard the
-          // adapter's semantic result, usage, logs, or presentation decision.
-          // Only complete the late metadata write when the reconciler chose the
-          // same terminal status; a conflicting terminal outcome remains owned
-          // by the path that won the compare-and-set. Owned legacy cancellation
-          // likewise keeps the provider session, logs, and usage after Stop wins.
-          if (
-            (adapterResult.nativeFinalization ||
-              (processCancellation && !processCancellation.failed && status === "cancelled")) &&
-            persistedRunWrite.run?.status === status
-          ) {
-            persistedRun = await db
-              .update(heartbeatRuns)
-              .set({
-                ...finalRunPatch,
-                resultJson: preserveWorkspaceRestoreRecoveryMetadataSql(
-                  cancellationResultJson(persistedRunWrite.run, status, finalRunPatch.resultJson, runErrorCode, runErrorMessage) ?? null,
-                ),
-
-                usageJson: { ...parseObject(persistedRunWrite.run.usageJson), ...parseObject(finalRunPatch.usageJson) },
-                finishedAt:
-                  persistedRunWrite.run.finishedAt ?? finalRunPatch.finishedAt,
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(heartbeatRuns.id, run.id),
-                  eq(heartbeatRuns.status, status),
-                ),
-              )
-              .returning()
-              .then((rows) => rows[0] ?? null);
-          }
-          if (!persistedRun) {
-            await accountRunCost(db, run.id, budgetHooks).catch((err) => {
-              logger.error({ err, runId: run.id }, "Late run accounting queued for recovery");
-            });
-            logger.info(
-              {
-                runId: run.id,
-                attemptedStatus: status,
-                currentStatus: persistedRunWrite.run?.status ?? null,
-              },
-              "skipping late run finalization because the run already left running state",
-            );
-            return;
-          }
-        }
-        if (persistedRun) {
-          // Accounting recovery is independent of workspace or issue finalization.
-          await accountRunCost(db, persistedRun.id, budgetHooks).catch((err) => {
-            logger.error({ err, runId: run.id }, "Run accounting queued for recovery");
-          });
-          persistedRun =
-            (await classifyAndPersistRunLiveness(
-              persistedRun,
-              persistedResultJson,
-            )) ?? persistedRun;
-        }
-
-        await setWakeupStatus(
-          run.wakeupRequestId,
-          outcome === "succeeded" ? "completed" : status,
-          {
-            finishedAt: new Date(),
-            error: runErrorMessage,
+        await runCompletion.completeRun({
+          run, agent, issueId, issueRef, signal: executionControl.controller.signal,
+          output: {
+            handle, outputProgressState, flushOutputProgress,
+            get stdoutExcerpt() { return stdoutExcerpt; },
+            get stderrExcerpt() { return stderrExcerpt; },
           },
-        );
-
-        const finalizedRun = persistedRun ?? (await getRun(run.id));
-        if (finalizedRun) {
-          await appendRunEvent(finalizedRun, {
-            eventType: "lifecycle",
-            stream: "system",
-            level: outcome === "succeeded" ? "info" : "error",
-            message: `run ${outcome}`,
-            payload: {
-              status,
-              exitCode: adapterResult.exitCode,
-              ...(readRunCancellation(finalizedRun.resultJson) ? { cancellation: readRunCancellation(finalizedRun.resultJson) } : {}),
-            },
-          });
-          try {
-            await completeSkillTestRunForHeartbeatOutcome({
-              run: finalizedRun,
-              issueId,
-              issueWorkMode: issueRef?.workMode ?? null,
-              outcome,
-              error: runErrorMessage,
-            });
-          } catch (err) {
-            logger.warn(
-              { err, runId: finalizedRun.id, issueId },
-              "failed to complete skill test run after heartbeat finalization",
-            );
-            await onLog(
-              "stderr",
-              `[paperclip] Failed to complete skill test run: ${err instanceof Error ? err.message : String(err)}\n`,
-            );
-          }
-          const livenessRun = finalizedRun;
-          await refreshContinuationSummaryForRun(livenessRun, agent);
-          const skipRunIssueComment =
-            parseObject(livenessRun.contextSnapshot).skipIssueComment === true;
-          let resolvedPresentationDecision: RunPresentationDecision | null =
-            null;
-          try {
-            const existingRunComment = issueId
-              ? await findRunIssueComment(
-                  livenessRun.id,
-                  livenessRun.companyId,
-                  issueId,
-                  persistedResultJson,
-                )
-              : null;
-            const finalAgentMessage =
-              await findLatestCompletedFinalAgentMessage(
-                livenessRun.id,
-                livenessRun.companyId,
-              );
-            const externalChatPresentationCandidate =
-              isExternalChatPresentationContext(livenessRun.contextSnapshot) ||
-              parseObject(livenessRun.contextSnapshot).source === "tool_action_review" ||
-              String(parseObject(livenessRun.contextSnapshot).source ?? "").startsWith("issue.comment") ||
-              parseObject(livenessRun.contextSnapshot).source === "issue.update";
-            const externalChatPresentationAuthorization =
-              issueId && externalChatPresentationCandidate
-                ? await resolveChatRunPresentationAuthorizationReason(db, {
-                    companyId: livenessRun.companyId,
-                    issueId,
-                    runId: livenessRun.id,
-                  })
-                : null;
-            const externalChatPresentationContext = isExternalChatPresentationContext(
-              livenessRun.contextSnapshot,
-              externalChatPresentationAuthorization === CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
-            );
-            const resolved = resolveHeartbeatRunResponse({
-              resultJson: persistedResultJson,
-              conversationTurnFinished: isConversation(issueContext) && livenessRun.status === "succeeded"
-                && persistedResultJson?.finalizationReasonCode === "conversation_turn_finished",
-              existingComment: existingRunComment,
-              finalAgentMessage,
-              preferFinalResponseOverExistingComment:
-                externalChatPresentationContext,
-              externalChatReviewResponseSummaryAuthorized:
-                persistedResultJson?.finalizationReasonCode ===
-                  "governed_response_waiting" &&
-                externalChatPresentationAuthorization ===
-                  CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
-              externalChatResponseWakeSummaryAuthorized:
-                Boolean(adapterResult.nativeFinalization) &&
-                externalChatPresentationAuthorization ===
-                  CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
-            });
-            let presentationDecision: RunPresentationDecision =
-              resolved.decision;
-
-            if (
-              issueId &&
-              !skipRunIssueComment &&
-              presentationDecision.commentAction === "create" &&
-              resolved.text
-            ) {
-              // The presentation resolver exposes only the final assistant
-              // surface selected from completed final messages or accepted
-              // semantic results. For an exactly bound external-chat run,
-              // authorize that narrow presentation as the provider reply;
-              // ordinary internal runs retain the private default.
-              const presentationAuthorizationReason =
-                await resolveChatRunPresentationAuthorizationReason(db, {
-                  companyId: livenessRun.companyId,
-                  issueId,
-                  runId: livenessRun.id,
-                });
-              const comment = await issuesSvc.addComment(
-                issueId,
-                resolved.text,
-                { agentId: agent.id, runId: livenessRun.id },
-                { authorizationReason: presentationAuthorizationReason, completionReply: true },
-              );
-              presentationDecision = {
-                ...presentationDecision,
-                commentId: comment.id,
-                reasonCodes: [
-                  ...presentationDecision.reasonCodes,
-                  "resolved_response_materialized",
-                ],
-              };
-              await logActivity(db, {
-                companyId: livenessRun.companyId,
-                actorType: "agent",
-                actorId: agent.id,
-                agentId: agent.id,
-                runId: livenessRun.id,
-                issueId,
-                action: "issue.comment_added",
-                entityType: "issue",
-                entityId: issueId,
-                details: {
-                  commentId: comment.id,
-                  bodySnippet: comment.body.slice(0, 120),
-                  identifier: issueRef?.identifier ?? null,
-                  issueTitle: issueRef?.title ?? null,
-                  authorizationReason: presentationAuthorizationReason,
-                  source: "run_presentation_resolver",
-                  presentationSource: presentationDecision.chosenSource,
-                },
-              });
-            } else if (presentationDecision.commentAction === "create") {
-              presentationDecision = {
-                ...presentationDecision,
-                commentAction: "none",
-                reasonCodes: [
-                  ...presentationDecision.reasonCodes,
-                  skipRunIssueComment
-                    ? "issue_comment_suppressed"
-                    : "run_has_no_issue",
-                ],
-              };
-            }
-
-            await db
-              .update(heartbeatRuns)
-              .set({
-                resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || ${JSON.stringify({ presentationDecision })}::jsonb`,
-                updatedAt: new Date(),
-              })
-              .where(eq(heartbeatRuns.id, livenessRun.id));
-            await appendRunEvent(livenessRun, {
-              eventType: "run.presentation.resolved",
-              stream: "system",
-              level: "info",
-              message: "run presentation resolved",
-              payload: { presentationDecision },
-            });
-            resolvedPresentationDecision = presentationDecision;
-          } catch (err) {
-            await onLog(
-              "stderr",
-              `[paperclip] Failed to resolve run presentation: ${err instanceof Error ? err.message : String(err)}\n`,
-            );
-          }
-          if (outcome === "failed" && isMaxTurnExhaustionRun(livenessRun)) {
-            const policy = parseMaxTurnContinuationPolicy(agent);
-            if (policy.enabled && policy.maxAttempts > 0) {
-              await scheduleBoundedRetryForRun(livenessRun, agent, {
-                retryReason: MAX_TURN_CONTINUATION_RETRY_REASON,
-                wakeReason: MAX_TURN_CONTINUATION_WAKE_REASON,
-                maxAttempts: policy.maxAttempts,
-                delayMs: policy.delayMs,
-              });
-            } else {
-              await appendRunEvent(livenessRun, {
-                eventType: "lifecycle",
-                stream: "system",
-                level: "warn",
-                message:
-                  "Max-turn continuation suppressed because the policy is disabled",
-                payload: {
-                  retryReason: MAX_TURN_CONTINUATION_RETRY_REASON,
-                  policy,
-                },
-              });
-            }
-          } else if (
-            outcome === "failed" &&
-            readTransientRecoveryContractFromRun(livenessRun)
-          ) {
-            await scheduleBoundedRetryForRun(livenessRun, agent);
-          } else if (
-            outcome === "failed" &&
-            !(await legacyExecutionNeedsReconciliationWithEvidence(db, livenessRun))
-          ) {
-            await scheduleInteractionContinuationInfrastructureRetryIfEligible(
-              livenessRun,
-              agent,
-            );
-          }
-          const issueCommentPolicyResult = await finalizeIssueCommentPolicy(
-            livenessRun,
-            agent,
-            resolvedPresentationDecision,
-          );
-          const conversationSettled = await settleConversationTurn(db, livenessRun);
-          await releaseIssueExecutionAndPromote(livenessRun, {
-            suppressImmediateRecovery: conversationSettled ||
-              readNonEmptyString(
-                parseObject(livenessRun.contextSnapshot).goalControlRequestId,
-              ) !== null ||
-              parseObject(livenessRun.contextSnapshot)
-                .resumeSessionGoalHeartbeat === true,
-          });
-          if (!conversationSettled) {
-            await handleIssueReviewPathDisposition(livenessRun);
-            if (livenessRun.runtimeMode !== "native") {
-              await recovery.reconcileLegacyContinuation(livenessRun.id);
-            } else {
-              await handleRunLivenessContinuation(livenessRun);
-              await handleSuccessfulRunHandoff(
-                issueCommentPolicyResult.outcome === "retry_queued" ||
-                  issueCommentPolicyResult.outcome === "retry_exhausted"
-                  ? { ...livenessRun, issueCommentStatus: issueCommentPolicyResult.outcome }
-                  : livenessRun,
-                agent,
-              );
-            }
-          }
-          if (
-            outcome === "succeeded" &&
-            issueId &&
-            parseObject(adapterResult.resultJson).goalRolloverRequired === true
-          ) {
-            const rolloverProjection = await runnerGoalService(db).projection(
-              livenessRun.companyId,
-              issueId,
-              agent.id,
-            );
-            if (rolloverProjection?.goal?.status === "active") {
-              await enqueueWakeup(agent.id, {
-                source: "automation",
-                triggerDetail: "system",
-                reason: "goal_control",
-                payload: {
-                  issueId,
-                  intent: "goal_rollover",
-                  predecessorRunId: livenessRun.id,
-                },
-                idempotencyKey: `goal_rollover:${livenessRun.id}`,
-                requestedByActorType: "system",
-                contextSnapshot: {
-                  issueId,
-                  taskKey: issueId,
-                  resumeSessionGoalHeartbeat: true,
-                  skipIssueComment: true,
-                  goalRolloverFromRunId: livenessRun.id,
-                },
-              });
-            }
-          }
-
-          // Dependency wake re-check: if this run's issue was marked done mid-run,
-          // the route-time `issue_blockers_resolved` wake may have been gated by
-          // workspace finalization or merged into this run. Reuse the level-triggered
-          // dependency backstop so finalize and periodic recovery share idempotency,
-          // readiness, active-path, and observability rules.
-          if (issueId && finalizedRun) {
-            try {
-              const blockerIssueStatus = await db
-                .select({ status: issues.status })
-                .from(issues)
-                .where(eq(issues.id, issueId))
-                .then((rows) => rows[0]?.status ?? null);
-              if (blockerIssueStatus === "done") {
-                await recovery.reconcileResolvedDependencyWakeBackstop({
-                  runId: finalizedRun.id,
-                  companyId: finalizedRun.companyId,
-                  blockerIssueId: issueId,
-                  source: "workspace.finalize",
-                });
-              }
-            } catch (finalizeWakeErr) {
-              logger.warn(
-                { err: finalizeWakeErr, runId: run.id, issueId },
-                "failed to evaluate dependent wakes after workspace_finalize",
-              );
-            }
-          }
-        }
-
-        if (finalizedRun) {
-          await updateRuntimeState(
-            agent,
-            finalizedRun,
-            adapterResult,
-            {
-              legacySessionId: nextSessionState.legacySessionId,
-            },
-            normalizedUsage,
-          );
-          if (taskKey) {
-            if (
-              adapterResult.clearSession ||
-              (!nextSessionState.params && !nextSessionState.displayId)
-            ) {
-              await clearTaskSessions(agent.companyId, agent.id, {
-                taskKey,
-                adapterType: agent.adapterType,
-                expectedRunId: finalizedRun.id,
-              });
-            } else {
-              await upsertTaskSession({
-                companyId: agent.companyId,
-                agentId: agent.id,
-                adapterType: agent.adapterType,
-                taskKey,
-                sessionParamsJson:
-                  attachPaperclipSessionMetadataToSessionParams(
-                    nextSessionState.params,
-                    configuredModel,
-                    sessionConfigMetadata,
-                  ),
-                sessionDisplayId: nextSessionState.displayId,
-                lastRunId: finalizedRun.id,
-                lastError: runErrorMessage,
-              });
-            }
-          }
-        }
-        await finalizeAgentStatus(agent.id, outcome, runErrorMessage, {
-          keepIdleOnFailure:
-            outcome === "failed" &&
-            ((finalizedRun
-              ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota"
-              : runErrorCode === "provider_quota") ||
-              isWorkspaceSyncConflictFailure(adapterResult.errorMessage)),
-          wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
+          session: { runtimeForAdapter, previousSessionParams, taskKey, configuredModel, sessionConfigMetadata },
+          readFailureReportSecrets,
+          adapterResult, sessionCodec, taskSessionForRun, sessionCompaction,
+          configFreshnessResultMetadata, runLedgerScope, currentUserRedactionOptions,
+          providerTraceCapture: providerTraceCapture !== null,
+          onProviderTraceFinalized: () => { providerTraceFinalized = true; },
+          issueContext, onLog,
         });
       } catch (err) {
         await persistUsageCaptureFailure?.();
@@ -9465,226 +5093,17 @@ export function heartbeatService(
           }
           return;
         }
-        // A process adapter may throw while its owned Stop is joining the
-        // child. Let the cancellation write settle before attempting failure.
-        await processRunCancellationSettlements.get(run.id)?.settled;
-        const message = redactCurrentUserText(
-          identityRedactor.redact(err instanceof Error ? err.message : "Unknown adapter failure"),
-          await getCurrentUserRedactionOptions(),
-        );
-        const workspaceValidationFailure = isWorkspaceValidationFailure(err)
-          ? err
-          : null;
-        const configurationIncompleteFailure = isConfigurationIncompleteFailure(
-          err,
-        )
-          ? err
-          : null;
-        const recordedResponsibleUserDenialCode =
-          normalizeResponsibleUserDenialCode(
-            (await getRun(run.id).catch(() => null))?.errorCode,
-          );
-        // The runtime resolution is scoped to the adapter try block. The
-        // durable coordinator is also the stronger authority here: legacy
-        // runs simply have no row, while native result-less exhaustion keeps
-        // its named failure instead of being flattened to `adapter_failed`.
-        const nativeTerminalFailureCode = await db
-          .select({
-            phase: nativeRunFinalizations.phase,
-            resultId: nativeRunFinalizations.resultId,
-            failureCode: nativeRunFinalizations.failureCode,
-          })
-          .from(nativeRunFinalizations)
-          .where(eq(nativeRunFinalizations.runId, run.id))
-          .limit(1)
-          .then((rows) => {
-            const coordinator = rows[0];
-            return coordinator?.phase === "terminal_failure" &&
-              coordinator.resultId === null
-              ? coordinator.failureCode
-              : null;
-          })
-          .catch(() => null);
-        const failureErrorCode =
-          workspaceValidationFailure?.code ??
-          configurationIncompleteFailure?.code ??
-          nonRetryablePreflightFailureCode(err) ??
-          recordedResponsibleUserDenialCode ??
-          nativeTerminalFailureCode ??
-          "adapter_failed";
-        logger.error({ err: identityRedactor.redact({ message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined }), runId }, "heartbeat execution failed");
-
-        let logSummary: {
-          bytes: number | null;
-          sha256?: string | null;
-          compressed: boolean;
-        } | null = null;
-        if (handle) {
-          try {
-            logSummary = await runLogStore.finalize(handle);
-          } catch (finalizeErr) {
-            logger.warn(
-              { err: finalizeErr, runId },
-              "failed to finalize run log after error",
-            );
-          }
-        }
-        const finalLogBytes = logSummary?.bytes;
-        if (outputProgressState.pending && typeof finalLogBytes === "number") {
-          outputProgressState.pending.bytes = finalLogBytes;
-        }
-        await flushOutputProgress({ force: true }).catch((flushErr) => {
-          logger.warn(
-            { err: flushErr, runId },
-            "failed to flush run output progress after error",
-          );
-        });
-
-        const stoppedDuringFailure = executionControl.controller.signal.aborted;
-        const stopSnapshot = stoppedDuringFailure ? await getRun(run.id) : null;
-        const failureOutcome = stoppedDuringFailure ? "cancelled" : "failed";
-        const failedRunWrite = await setRunStatusIfRunning(run.id, failureOutcome, {
-          error: message,
-          errorCode: stopSnapshot?.errorCode ?? failureErrorCode,
-          finishedAt: new Date(),
-          resultJson: mergeRunStopMetadataForAgent(agent, failureOutcome, {
-            errorCode: failureErrorCode,
-            errorMessage: message,
-            resultJson: {
-              ...parseObject(stopSnapshot?.resultJson),
-              ...requiredWorkspaceRestoreEvidence,
-              ...(workspaceValidationFailure?.resultJson ??
-                configurationIncompleteFailure?.resultJson ??
-                {}),
-              ...(!legacyAdapterEntered && run.runtimeMode !== "native"
-                ? {
-                    executionRecovery: {
-                      kind: "bootstrap",
-                      providerWorkStarted: false,
-                    },
-                  }
-                : {}),
-            },
-          }),
-          stdoutExcerpt,
-          stderrExcerpt,
-          logBytes: logSummary?.bytes,
-          logSha256: logSummary?.sha256,
-          logCompressed: logSummary?.compressed ?? false,
-        }, { error: err, phase: "execute", secretValues: readFailureReportSecrets() });
-        if (
-          !failedRunWrite.updated &&
-          !(
-            nativeTerminalFailureCode && failedRunWrite.run?.status === "failed"
-          )
-        ) {
-          logger.info(
-            {
-              runId: run.id,
-              attemptedStatus: "failed",
-              currentStatus: failedRunWrite.run?.status ?? null,
-            },
-            "skipping late adapter failure finalization because the run already left running state",
-          );
-          return;
-        }
-
-        const failedRun = failedRunWrite.run;
-        await setWakeupStatus(run.wakeupRequestId, "failed", {
-          finishedAt: new Date(),
-          error: message,
-        });
-
-        if (failedRun) {
-          await appendRunEvent(failedRun, {
-            eventType: "error",
-            stream: "system",
-            level: "error",
-            message,
-          });
-          const livenessRun =
-            (await classifyAndPersistRunLiveness(failedRun)) ?? failedRun;
-          try {
-            await completeSkillTestRunForHeartbeatOutcome({
-              run: livenessRun,
-              issueId,
-              issueWorkMode: issueRef?.workMode ?? null,
-              outcome: "failed",
-              error: message,
-            });
-          } catch (err) {
-            logger.warn(
-              { err, runId: livenessRun.id, issueId },
-              "failed to complete skill test run after heartbeat adapter failure",
-            );
-          }
-          await refreshContinuationSummaryForRun(livenessRun, agent);
-          if (
-            !isWorkspaceValidationFailedRun(livenessRun) &&
-            !isConfigurationIncompleteFailedRun(livenessRun)
-          ) {
-            await finalizeIssueCommentPolicy(livenessRun, agent);
-          }
-          await scheduleInteractionContinuationInfrastructureRetryIfEligible(
-            livenessRun,
-            agent,
-          );
-          await releaseIssueExecutionAndPromote(livenessRun, {
-            // Native recovery owns the original heartbeat run through
-            // exhaustion. Once its durable coordinator has classified a
-            // terminal failure, generic issue recovery must not create a
-            // replacement retryOfRunId chain for the same provider work.
-            suppressImmediateRecovery: nativeTerminalFailureCode !== null,
-          });
-          await handleIssueReviewPathDisposition(livenessRun);
-
-          await updateRuntimeState(
-            agent,
-            livenessRun,
-            {
-              exitCode: null,
-              signal: null,
-              timedOut: false,
-              errorMessage: message,
-            },
-            {
-              legacySessionId: runtimeForAdapter.sessionId,
-            },
-          );
-
-          if (
-            taskKey &&
-            (goalCheckpointSession.current ||
-              previousSessionParams ||
-              previousSessionDisplayId ||
-              taskSession)
-          ) {
-            await upsertTaskSession({
-              companyId: agent.companyId,
-              agentId: agent.id,
-              adapterType: agent.adapterType,
-              taskKey,
-              sessionParamsJson:
-                goalCheckpointSession.current?.params ??
-                attachPaperclipSessionMetadataToSessionParams(
-                  previousSessionParams,
-                  configuredModel,
-                  sessionConfigMetadata,
-                ),
-              sessionDisplayId:
-                goalCheckpointSession.current?.displayId ??
-                previousSessionDisplayId,
-              lastRunId: failedRun.id,
-              lastError: message,
-            });
-          }
-        }
-
-        await finalizeAgentStatus(agent.id, "failed", message, {
-          wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
-          keepIdleOnFailure:
-            Boolean(nonRetryablePreflightFailureCode(err)) ||
-            isWorkspaceSyncConflictFailure(message),
+        await runCompletion.failRun({
+          run, agent, issueId, issueRef, signal: executionControl.controller.signal,
+          output: {
+            handle, outputProgressState, flushOutputProgress,
+            get stdoutExcerpt() { return stdoutExcerpt; },
+            get stderrExcerpt() { return stderrExcerpt; },
+          },
+          session: { runtimeForAdapter, previousSessionParams, taskKey, configuredModel, sessionConfigMetadata },
+          readFailureReportSecrets,
+          runId, err, identityRedactor, requiredWorkspaceRestoreEvidence, legacyAdapterEntered,
+          goalCheckpointSession, previousSessionDisplayId, taskSession,
         });
       }
     } catch (outerErr) {
@@ -9724,223 +5143,9 @@ export function heartbeatService(
           },
         );
       } else {
-        // Setup code before adapter.execute threw (e.g. ensureRuntimeState, resolveWorkspaceForRun).
-        // The inner catch did not fire, so we must record the failure here.
-        const message = redactCurrentUserText(
-          identityRedactor.redact(outerErr instanceof Error
-            ? outerErr.message
-            : "Unknown setup failure"),
-          await getCurrentUserRedactionOptions(),
-        );
-        // A missing secret/env binding is a known pre-dispatch configuration gap,
-        // not an opaque setup crash. Surface it with its own errorCode so the
-        // recovery path routes it to a human owner instead of looping retries.
-        const workspaceValidationSetupFailure = isWorkspaceValidationFailure(
-          outerErr,
-        )
-          ? outerErr
-          : null;
-        const configurationIncompleteSetupFailure =
-          isConfigurationIncompleteFailure(outerErr) ? outerErr : null;
-        const unresolvedBaseRefSetupFailure = isUnresolvedWorkspaceBaseRefError(
-          outerErr,
-        )
-          ? outerErr
-          : null;
-        // A sandbox provider plugin stuck in error/disabled/upgrade_pending
-        // fails every lease the same way until an operator acts, so it is a
-        // configuration gap, not a transient setup failure.
-        const sandboxProviderPluginNotReadySetupFailure =
-          parseSandboxProviderPluginNotReadyFailureMessage(
-            outerErr instanceof Error ? outerErr.message : null,
-          );
-        const recordedResponsibleUserDenialCode =
-          normalizeResponsibleUserDenialCode(
-            (await getRun(runId).catch(() => null))?.errorCode,
-          );
-        const nonRetryablePreflightCode =
-          nonRetryablePreflightFailureCode(outerErr);
-        const workspaceGitScanFailure = isWorkspaceGitScanError(outerErr) ? outerErr : null;
-        const setupFailureErrorCode =
-          workspaceGitScanFailure?.code ??
-          workspaceValidationSetupFailure?.code ??
-          configurationIncompleteSetupFailure?.code ??
-          (unresolvedBaseRefSetupFailure ||
-          sandboxProviderPluginNotReadySetupFailure
-            ? CONFIGURATION_INCOMPLETE_FAILURE_CODE
-            : null) ??
-          recordedResponsibleUserDenialCode ??
-          nonRetryablePreflightCode ??
-          "setup_failed";
-        logger.error(
-          { err: identityRedactor.redact({ message: outerErr instanceof Error ? outerErr.message : String(outerErr), stack: outerErr instanceof Error ? outerErr.stack : undefined }), runId },
-          "heartbeat execution setup failed",
-        );
-        const setupFailureAgent = await getAgent(run.agentId).catch(() => null);
-        // The structured failure payload drives the recovery notice and next
-        // action, so it is persisted even when the agent lookup failed and the
-        // agent-scoped stop metadata cannot be merged in.
-        const setupFailureDetails =
-          (workspaceGitScanFailure ? {
-            workspaceGitScan: {
-              code: workspaceGitScanFailure.code,
-              phase: "workspace_setup",
-              retryable: isTransientWorkspaceGitScanCode(workspaceGitScanFailure.code),
-            },
-          } : null) ??
-          workspaceValidationSetupFailure?.resultJson ??
-          configurationIncompleteSetupFailure?.resultJson ??
-          (unresolvedBaseRefSetupFailure
-            ? buildUnresolvedWorkspaceBaseRefResultJson(
-                run,
-                unresolvedBaseRefSetupFailure,
-              )
-            : null) ??
-          (sandboxProviderPluginNotReadySetupFailure
-            ? buildSandboxProviderPluginNotReadyResultJson(
-                run,
-                sandboxProviderPluginNotReadySetupFailure,
-              )
-            : null);
-        const connectionFailure = readGitConnectionFailure(outerErr);
-        const setupFailureResultJson = {
-          ...setupFailureDetails,
-          ...(connectionFailure ? { connectionFailure } : {}),
-          executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
-        };
-        const setupFailureWrite = await setRunStatusIfRunning(runId, "failed", {
-          error: message,
-          errorCode: setupFailureErrorCode,
-          finishedAt: new Date(),
-          ...(setupFailureAgent
-            ? {
-                resultJson: mergeRunStopMetadataForAgent(
-                  setupFailureAgent,
-                  "failed",
-                  {
-                    errorCode: setupFailureErrorCode,
-                    errorMessage: message,
-                    resultJson: setupFailureResultJson,
-                  },
-                ),
-              }
-            : setupFailureResultJson
-              ? { resultJson: setupFailureResultJson }
-              : {}),
-        }, { error: outerErr, phase: "setup", secretValues: readFailureReportSecrets() }).catch(() => ({ run: null, updated: false as const }));
-        if (!setupFailureWrite.updated) {
-          logger.info(
-            {
-              runId,
-              attemptedStatus: "failed",
-              currentStatus: setupFailureWrite.run?.status ?? null,
-            },
-            "skipping late setup failure finalization because the run already left running state",
-          );
-        } else {
-          await setWakeupStatus(run.wakeupRequestId, "failed", {
-            finishedAt: new Date(),
-            error: message,
-          }).catch(() => undefined);
-        }
-        const failedRun = await getRun(runId).catch(() => null);
-        if (setupFailureWrite.updated && failedRun) {
-          // Emit a run-log event so the failure is visible in the run timeline,
-          // consistent with what the inner catch block does for adapter failures.
-          await appendRunEvent(failedRun, {
-            eventType: "error",
-            stream: "system",
-            level: "error",
-            message,
-          }).catch(() => undefined);
-          const livenessRun = await classifyAndPersistRunLiveness(
-            failedRun,
-          ).catch(() => failedRun);
-          const setupFailureIssueId = readNonEmptyString(
-            parseObject(livenessRun.contextSnapshot).issueId,
-          );
-          if (setupFailureIssueId) {
-            await completeSkillTestRunForHeartbeatOutcome({
-              run: livenessRun,
-              issueId: setupFailureIssueId,
-              outcome: "failed",
-              error: message,
-            }).catch((completionErr) => {
-              logger.warn(
-                {
-                  err: completionErr,
-                  runId: livenessRun.id,
-                  issueId: setupFailureIssueId,
-                },
-                "failed to complete skill test run after heartbeat setup failure",
-              );
-            });
-          }
-          const failedAgent =
-            setupFailureAgent ??
-            (await getAgent(run.agentId).catch(() => null));
-          if (failedAgent) {
-            await refreshContinuationSummaryForRun(
-              livenessRun,
-              failedAgent,
-            ).catch(() => undefined);
-            if (
-              !isWorkspaceValidationFailedRun(livenessRun) &&
-              !isConfigurationIncompleteFailedRun(livenessRun)
-            ) {
-              await finalizeIssueCommentPolicy(livenessRun, failedAgent).catch(
-                () => undefined,
-              );
-            }
-            // No provider work began. Retry temporary host scan failures with
-            // the existing durable failure budget, before releasing execution.
-            // Generic recovery must not grant a second budget on exhaustion.
-            await (isTransientWorkspaceGitScanCode(livenessRun.errorCode)
-              ? scheduleBoundedRetryForRun(livenessRun, failedAgent)
-              : scheduleInteractionContinuationInfrastructureRetryIfEligible(livenessRun, failedAgent)
-            ).catch((retryError) => {
-              logger.warn(
-                { err: retryError, runId: livenessRun.id },
-                "failed to schedule interaction continuation retry after setup failure",
-              );
-            });
-          }
-          await releaseIssueExecutionAndPromote(livenessRun, {
-            suppressImmediateRecovery:
-              readNonEmptyString(
-                parseObject(livenessRun.contextSnapshot).goalControlRequestId,
-              ) !== null ||
-              parseObject(livenessRun.contextSnapshot)
-                .resumeSessionGoalHeartbeat === true,
-          }).catch((releaseError) => {
-            logger.error(
-              { err: releaseError, runId },
-              "failed to release issue execution after heartbeat setup failure",
-            );
-          });
-          await handleIssueReviewPathDisposition(livenessRun).catch(
-            (reviewPathError) => {
-              logger.error(
-                { err: reviewPathError, runId },
-                "failed to evaluate review-path disposition after heartbeat setup failure",
-              );
-            },
-          );
-        }
-        // Ensure the agent is not left stuck in "running" if the setup-failure
-        // path owned the terminal transition. If another path already finalized
-        // the run, keep that terminal outcome authoritative.
-        if (setupFailureWrite.updated) {
-          await finalizeAgentStatus(run.agentId, "failed", message, {
-            wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
-            // Low-trust admission failures are task/principal preconditions,
-            // not evidence that the immutable endpoint agent is unhealthy.
-            // Keep the failed run and its safe provider refusal authoritative,
-            // but return the agent to idle so clients do not also announce a
-            // misleading agent-wide error for the same rejected chat turn.
-            keepIdleOnFailure: Boolean(nonRetryablePreflightCode),
-          }).catch(() => undefined);
-        }
+        await runCompletion.failRunSetup({
+          run, runId, outerErr, identityRedactor, readFailureReportSecrets,
+        });
       }
     } finally {
       await nativeInstructionReservation?.release().catch(error => logger.warn({ runId: run.id, err: error }, "Managed warm session preparation cleanup failed"));
@@ -10334,6 +5539,12 @@ export function heartbeatService(
 
     resumeQueuedRuns,
 
+    resumeQueuedRunsForAgent: async (companyId: string, agentId: string) => {
+      const agent = await getAgent(agentId);
+      if (!agent || agent.companyId !== companyId) return [];
+      return startNextQueuedRunForAgent(agentId);
+    },
+
     scheduleBoundedRetry,
 
     reconcileStrandedAssignedIssues,
@@ -10361,92 +5572,7 @@ export function heartbeatService(
 
     buildRunOutputSilence,
 
-    tickTimers: async (now = new Date()) => {
-      if ((await getSchedulingSuppression()).suppressed) {
-        return {
-          checked: 0,
-          enqueued: 0,
-          skipped: 0,
-        };
-      }
-      const cutoff = await getWorktreeExecutionCutoff();
-
-      const allAgents = await db
-        .select({ ...getTableColumns(agents) })
-        .from(agents)
-        .innerJoin(companies, eq(companies.id, agents.companyId))
-        .where(eq(companies.status, "active"));
-      const agentsByCompany = groupAgentOrgRowsByCompany(
-        allAgents.map(toAgentOrgRow),
-      );
-      let checked = 0;
-      let enqueued = 0;
-      let skipped = 0;
-
-      for (const agent of allAgents) {
-        const invokability = evaluateAgentInvokability(
-          toAgentOrgRow(agent),
-          agentsByCompany.get(agent.companyId) ?? [],
-        );
-        if (!invokability.invokable) continue;
-        const policy = parseHeartbeatPolicy(agent);
-        if (!policy.enabled || policy.intervalSec <= 0) continue;
-
-        if (cutoff) {
-          const eligibleIssue = await db
-            .select({ id: issues.id })
-            .from(issues)
-            .where(
-              and(
-                eq(issues.companyId, agent.companyId),
-                eq(issues.assigneeAgentId, agent.id),
-                inArray(issues.status, ["todo", "in_progress"]),
-                gte(issues.createdAt, cutoff),
-              ),
-            )
-            .limit(1)
-            .then((rows) => rows[0] ?? null);
-          if (!eligibleIssue) continue;
-        }
-
-        checked += 1;
-        const baseline = new Date(
-          agent.lastHeartbeatAt ?? agent.createdAt,
-        ).getTime();
-        const elapsedMs = now.getTime() - baseline;
-        if (elapsedMs < policy.intervalSec * 1000) continue;
-        const timerClaim = await claimDueTimerHeartbeat(
-          agent,
-          now,
-          policy.intervalSec,
-        );
-        if (!timerClaim) continue;
-
-        const run = await enqueueWakeup(agent.id, {
-          source: "timer",
-          triggerDetail: "system",
-          reason: "heartbeat_timer",
-          requestedByActorType: "system",
-          requestedByActorId: "heartbeat_scheduler",
-          contextSnapshot: {
-            source: "scheduler",
-            reason: "interval_elapsed",
-            now: now.toISOString(),
-            timerClaimWasFirstHeartbeat: timerClaim.wasFirstHeartbeat,
-          },
-        });
-        if (run) enqueued += 1;
-        else skipped += 1;
-      }
-
-      const issueMonitors = await tickDueIssueMonitors(now);
-
-      return {
-        checked: checked + issueMonitors.checked,
-        enqueued: enqueued + issueMonitors.triggered,
-        skipped: skipped + issueMonitors.skipped,
-      };
-    },
+    tickTimers,
 
     cancelRun: (runId: string, reason?: string, options?: CancelRunOptions) =>
       cancelRunInternal(runId, reason, options),
