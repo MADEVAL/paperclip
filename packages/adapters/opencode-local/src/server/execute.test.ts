@@ -488,6 +488,50 @@ describe("OpenCode version guard", () => {
     expect(result.errorMessage).toBeNull();
   });
 
+  it("does not recover a non-zero exit when the transport reports an error code", async () => {
+    versionProbeMock.mockResolvedValue({ version: "2.0.24", major: 2, minor: 0, patch: 24, supported: true });
+    const result = await callExecute({}, {}, async (...callArgs: unknown[]) => {
+      const options = callArgs[4] as
+        | { onLog?: (stream: string, chunk: string) => Promise<void> }
+        | undefined;
+      await options?.onLog?.(
+        "stdout",
+        `${JSON.stringify({ type: "text", sessionID: "s", part: { text: "Готово." } })}\n`,
+      );
+      return probeResult({ exitCode: 1, stdout: "", stderr: "", errorCode: "duplex_channel_lost" });
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.errorCode).toBe("duplex_channel_lost");
+  });
+
+  it("does not recover a non-zero exit when a tool error scrolled past the captured tail", async () => {
+    versionProbeMock.mockResolvedValue({ version: "2.0.24", major: 2, minor: 0, patch: 24, supported: true });
+    const result = await callExecute({}, {}, async (...callArgs: unknown[]) => {
+      const options = callArgs[4] as
+        | { onLog?: (stream: string, chunk: string) => Promise<void> }
+        | undefined;
+      await options?.onLog?.(
+        "stdout",
+        `${JSON.stringify({
+          type: "tool_use",
+          sessionID: "s",
+          part: { state: { status: "error", error: "early tool boom" } },
+        })}\n`,
+      );
+      // Push the tool error beyond the 256 KiB raw tail and the display cap.
+      await options?.onLog?.(
+        "stdout",
+        `${JSON.stringify({ type: "step_start", sessionID: "s" })}\n`.repeat(20_000),
+      );
+      await options?.onLog?.(
+        "stdout",
+        `${JSON.stringify({ type: "text", sessionID: "s", part: { text: "Готово." } })}\n`,
+      );
+      return probeResult({ exitCode: 1, stdout: "", stderr: "" });
+    });
+    expect(result.exitCode).toBe(1);
+  });
+
   it("does not recover a non-zero exit that did not end on a final answer", async () => {
     versionProbeMock.mockResolvedValue({ version: "2.0.24", major: 2, minor: 0, patch: 24, supported: true });
     const result = await callExecute({}, {}, async (...callArgs: unknown[]) => {

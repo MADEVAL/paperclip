@@ -731,6 +731,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       // the full stream so a late structured error is still recoverable.
       const maxRawTail = 256 * 1024;
       let rawStdoutTail = "";
+      // The accounting checkpoint compacts each record and drops `state`/`error`,
+      // so a provider or tool failure that scrolls past both the display cap and
+      // the 256 KiB tail stays invisible to the recovery decision below. Track
+      // those failures on the full stream with a dedicated line-buffered scan.
+      let streamFailure = false;
+      let streamRemainder = "";
+      const noteStreamFailure = (chunk: string) => {
+        streamRemainder += chunk;
+        const lines = streamRemainder.split(/\r?\n/);
+        streamRemainder = lines.pop() ?? "";
+        for (const line of lines) {
+          const probe = parseOpenCodeJsonl(line);
+          if (probe.errorMessage !== null || probe.toolErrors.length > 0) {
+            streamFailure = true;
+            return;
+          }
+        }
+      };
       const accountingLog = createUsageCheckpointLog(onLog, ctx.onUsage ?? (async () => {}), stdout => {
         hasAccounting = true;
         const parsed = consumeAccounting(stdout);
@@ -741,6 +759,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       });
       const captureLog = async (stream: "stdout" | "stderr", chunk: string) => {
         if (stream === "stdout") {
+          if (!streamFailure) noteStreamFailure(chunk);
           const next = rawStdoutTail + chunk;
           rawStdoutTail = next.length > maxRawTail ? next.slice(-maxRawTail) : next;
         }
@@ -759,6 +778,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         runLogTail: paperclipBridge?.runLogTail,
         settleRunDisposition: paperclipBridge?.settleRunDisposition,
       });
+      // Flush the final partial line into the full-stream failure scan.
+      if (!streamFailure) noteStreamFailure("\n");
       // Parse any unterminated final record before deciding whether its usage
       // is complete. A clean exit alone cannot turn absent counters into zero.
       await accountingLog.flush();
@@ -802,7 +823,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       } catch {
         lastRecordType = "";
       }
-      return { proc, rawStderr: proc.stderr, parsed, lastRecordType };
+      return { proc, rawStderr: proc.stderr, parsed, lastRecordType, streamFailure };
     };
 
     const toResult = (
@@ -811,6 +832,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         rawStderr: string;
         parsed: ReturnType<typeof parseOpenCodeJsonl>;
         lastRecordType?: string;
+        streamFailure?: boolean;
       },
       clearSessionOnMissingSession = false,
     ): AdapterExecutionResult => {
@@ -869,6 +891,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         rawExitCode !== null &&
         rawExitCode !== 0 &&
         !attempt.proc.signal &&
+        // A transport-level failure (for example a lost sandbox duplex channel)
+        // is never a successful run, even when the last record is assistant text.
+        !attempt.proc.errorCode &&
+        // A provider or tool error anywhere in the full stream blocks recovery;
+        // the accounting checkpoint can drop it before the tail is inspected.
+        !attempt.streamFailure &&
         parsedError === "" &&
         attempt.parsed.toolErrors.length === 0 &&
         attempt.lastRecordType === "text";
