@@ -27,6 +27,7 @@ const directBuiltInAdapterTypes = [
   "hermes_local",
   "kimi_local",
   "openclaw_gateway",
+  "opencode_gateway",
   "opencode_local",
   "process",
   "http",

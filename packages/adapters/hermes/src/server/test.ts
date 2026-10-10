@@ -84,11 +84,33 @@ async function checkCliVersion(
 }
 
 async function checkPython(): Promise<AdapterEnvironmentCheck | null> {
-  try {
-    const { stdout } = await execFileAsync("python3", ["--version"], {
-      timeout: 5_000,
-    });
+  // Windows installs Python as `python` (and the `py` launcher); a `python3.exe`
+  // there is often a Microsoft Store alias that is not a real interpreter. Probing
+  // only `python3` therefore reports a false "not found" on a machine that has a
+  // working Python 3.10+. Try every platform-appropriate command instead.
+  const candidates: Array<{ command: string; args: string[] }> = [];
+  if (process.platform === "win32") {
+    candidates.push(
+      { command: "python", args: ["--version"] },
+      { command: "python3", args: ["--version"] },
+      { command: "py", args: ["-3", "--version"] },
+    );
+  } else {
+    candidates.push(
+      { command: "python3", args: ["--version"] },
+      { command: "python", args: ["--version"] },
+    );
+  }
+  for (const { command, args } of candidates) {
+    let stdout: string;
+    try {
+      ({ stdout } = await execFileAsync(command, args, { timeout: 5_000 }));
+    } catch {
+      continue;
+    }
     const version = stdout.trim();
+    // A Store alias can exit 0 with no interpreter version; require a real match.
+    if (!/\bPython\b/.test(version)) continue;
     const match = version.match(/(\d+)\.(\d+)/);
     if (match) {
       const major = parseInt(match[1], 10);
@@ -103,14 +125,13 @@ async function checkPython(): Promise<AdapterEnvironmentCheck | null> {
       }
     }
     return null; // OK
-  } catch {
-    return {
-      level: "warn",
-      message: "python3 not found in PATH",
-      hint: "Hermes Agent requires Python 3.10+. Install it from python.org",
-      code: "hermes_python_missing",
-    };
   }
+  return {
+    level: "warn",
+    message: "Python 3.10+ not found in PATH",
+    hint: "Hermes Agent requires Python 3.10+. Install it from python.org",
+    code: "hermes_python_missing",
+  };
 }
 
 function checkModel(

@@ -62,8 +62,11 @@ describe("OpenCode timeout reporting", () => {
       resultJson: { adapterExecutionTimeout: { timeoutSec: resolved, source } } });
     expect(JSON.stringify(result)).not.toContain("private-");
     expect(result.errorMessage).not.toContain(String(resolved));
-    expect(mocks.process).toHaveBeenCalledTimes(1);
-    expect(mocks.process.mock.calls[0]![4]).toMatchObject({ timeoutSec: resolved, graceSec: 20 });
+    // A remote run probes the installed CLI generation (`--version`) before the
+    // real invocation, so the run call follows the probe call.
+    const runIndex = remote ? 1 : 0;
+    expect(mocks.process).toHaveBeenCalledTimes(remote ? 2 : 1);
+    expect(mocks.process.mock.calls[runIndex]![4]).toMatchObject({ timeoutSec: resolved, graceSec: 20 });
     expect(mocks.restore).toHaveBeenCalledTimes(remote ? 1 : 0);
     expect(mocks.stop).toHaveBeenCalledTimes(remote ? 1 : 0);
   });
@@ -75,7 +78,8 @@ describe("OpenCode timeout reporting", () => {
       errorMessage: exitCode === 0 ? null : "fixture failure",
       resultJson: { stdout: rawOutput, stderr: "fixture failure",
         adapterExecutionTimeout: { timeoutSec: 14400, source: "sandbox_default" } } });
-    expect(mocks.process).toHaveBeenCalledTimes(1);
+    // `context(0)` targets a remote sandbox, so it probes the CLI first.
+    expect(mocks.process).toHaveBeenCalledTimes(2);
     expect(mocks.restore).toHaveBeenCalledTimes(1);
     expect(mocks.stop).toHaveBeenCalledTimes(1);
   });

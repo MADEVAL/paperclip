@@ -66,6 +66,23 @@ compatibility shim that re-exports the gateway entrypoints for one release.
 New plugin overrides should target `@paperclipai/hermes-paperclip-adapter` and
 set the desired type key (`hermes_local` or `hermes_gateway`).
 
+### OpenCode local vs gateway
+
+Use `opencode_local` when Paperclip should launch the OpenCode CLI (`opencode
+run`) on the Paperclip host for each heartbeat. Use `opencode_gateway`
+(`@paperclipai/adapter-opencode-gateway`, an external plugin) when OpenCode is
+already running as an HTTP/SSE server (`opencode serve`) and Paperclip should
+open sessions against it. The gateway adapter is version-aware across the V1
+(`opencode-ai` 1.x) and V2 (`@opencode/cli` 2.x) server APIs, and qualified
+versions are `1.18.34 <= v < 2.0.0` and `2.0.0 <= v < 2.1.0`.
+
+Gateway runs do not use a Paperclip-managed worktree: OpenCode operates on a
+directory the gateway host can already see (co-location or a shared volume), and
+the server's single basic-auth password means one server should not be shared by
+multiple untrusted companies. The gateway also owns provider credentials, so it
+is excluded from AI-connection routing like the other gateway adapters. See the
+package README for the protocol map and the built-in promotion checklist.
+
 ### External (plugin) adapters
 
 These adapters ship as standalone npm packages and are installed via the plugin system:
@@ -73,6 +90,7 @@ These adapters ship as standalone npm packages and are installed via the plugin 
 | Adapter | Package | Type Key | Description |
 |---------|---------|----------|-------------|
 | Droid | `@henkey/droid-paperclip-adapter` | `droid_local` | Runs Factory Droid locally |
+| OpenCode Gateway | `@paperclipai/adapter-opencode-gateway` | `opencode_gateway` | Connects to an already-running OpenCode HTTP/SSE server (`opencode serve`); external plugin, not yet a built-in type |
 
 ## External Adapters
 

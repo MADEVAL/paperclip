@@ -25,6 +25,7 @@ export const connectionScopeGaps = [
   { adapter: "pi_local", status: "unsupported", reason: "No managed connection flow or qualified model source." },
   { adapter: "openclaw_gateway", status: "excluded", reason: "Remote gateway owns provider configuration." },
   { adapter: "hermes_gateway", status: "excluded", reason: "Remote gateway owns provider configuration." },
+  { adapter: "opencode_gateway", status: "excluded", reason: "Remote gateway owns provider configuration." },
   { adapter: "cursor_cloud", status: "excluded", reason: "Remote integration owns provider configuration." },
   { adapter: "process", status: "excluded", reason: "External process owns provider configuration." },
   { adapter: "http", status: "excluded", reason: "Remote integration owns provider configuration." },
