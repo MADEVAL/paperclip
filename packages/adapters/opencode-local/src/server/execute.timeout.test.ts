@@ -20,6 +20,13 @@ vi.mock("@paperclipai/adapter-utils/execution-target", async (importOriginal) =>
   startAdapterExecutionTargetPaperclipBridge: vi.fn(async () => ({ env: {}, stop: mocks.stop })),
   runAdapterExecutionTargetProcess: mocks.process,
 }));
+// The local path probes the installed CLI version. The fixture command in the
+// deadline test never answers `--version`, so mock the probe to keep the test
+// focused on the real timeout/termination behaviour instead of hanging.
+vi.mock("./version.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./version.js")>(),
+  probeOpenCodeCliVersion: vi.fn(async () => null),
+}));
 import { execute } from "./execute.js";
 
 const rawOutput = "private-output-canary";

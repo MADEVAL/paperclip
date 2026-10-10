@@ -132,6 +132,8 @@ export interface OpenCodeApiClient {
     modelID: string;
     prompt: string;
     system?: string;
+    /** V1 reasoning variant (openrouter). V2 ignores this field. */
+    variant?: string;
   }): Promise<void>;
   interrupt(sessionId: string): Promise<void>;
   messages(sessionId: string): Promise<unknown>;
@@ -311,6 +313,7 @@ class OpenCodeV1Client implements OpenCodeApiClient {
     modelID: string;
     prompt: string;
     system?: string;
+    variant?: string;
   }): Promise<void> {
     await this.transport.request(
       `/session/${encodeURIComponent(input.sessionId)}/prompt_async`,
@@ -322,6 +325,9 @@ class OpenCodeV1Client implements OpenCodeApiClient {
           // at this HTTP boundary.
           providerID: input.providerID,
           modelID: input.modelID,
+          // Always select a deterministic variant on an ordinary turn so a
+          // previous disabled turn cannot change this turn's provider defaults.
+          ...(input.variant ? { variant: input.variant } : {}),
           ...(input.system ? { system: input.system } : {}),
           parts: [{ type: "text", text: input.prompt }],
         }),
