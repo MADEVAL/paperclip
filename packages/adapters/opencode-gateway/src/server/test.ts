@@ -6,6 +6,7 @@ import type {
 import { parseObject } from "@paperclipai/adapter-utils/server-utils";
 import {
   apiUrl,
+  buildBasicAuthHeader,
   detectOpenCodeServerInfo,
   fetchFailureMessage,
   type OpenCodeConnection,
@@ -28,10 +29,6 @@ function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentT
   if (checks.some((check) => check.level === "error")) return "fail";
   if (checks.some((check) => check.level === "warn")) return "warn";
   return "pass";
-}
-
-function buildAuthHeader(username: string, password: string): string {
-  return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
 }
 
 function result(
@@ -95,12 +92,19 @@ export async function testEnvironment(
     }
   }
 
-  if (!cfg.password) {
+  if (!cfg.password && !cfg.allowNoAuth) {
     checks.push({
       code: "opencode_gateway_password_missing",
       level: "error",
-      message: "OpenCode Gateway requires password.",
-      hint: "Start the server with OPENCODE_SERVER_PASSWORD (and optionally OPENCODE_SERVER_USERNAME) and copy the same value into adapterConfig.password.",
+      message: "OpenCode Gateway requires password, unless the server runs without auth.",
+      hint: "Start the server with OPENCODE_SERVER_PASSWORD and copy the value into adapterConfig.password, or enable 'Connect without a password' when the server has no auth.",
+    });
+  } else if (!cfg.password && cfg.allowNoAuth) {
+    checks.push({
+      code: "opencode_gateway_no_auth_selected",
+      level: "info",
+      message: "Configured to connect without basic auth.",
+      hint: "Only do this on loopback or a trusted private network; an unauthenticated server lets anyone on the network drive this agent.",
     });
   } else if (cfg.username !== DEFAULT_SERVER_USERNAME) {
     checks.push({
@@ -111,13 +115,23 @@ export async function testEnvironment(
     });
   }
 
-  if (checks.some((check) => check.level === "error") || !cfg.baseUrl || !cfg.password) {
+  const authReady = Boolean(cfg.password) || cfg.allowNoAuth;
+  if (checks.some((check) => check.level === "error") || !cfg.baseUrl || !authReady) {
     return result(ctx, checks);
+  }
+
+  if (cfg.allowNoAuth && cfg.baseUrl && !cfg.password && !isLoopbackHostname(cfg.baseUrl.hostname)) {
+    checks.push({
+      code: "opencode_gateway_no_auth_remote",
+      level: "warn",
+      message: `Connecting without basic auth to non-loopback host "${cfg.baseUrl.hostname}".`,
+      hint: "An unauthenticated OpenCode server exposes the agent, its workspace, and its providers to the whole network.",
+    });
   }
 
   const connection: OpenCodeConnection = {
     baseUrl: cfg.baseUrl,
-    authHeader: buildAuthHeader(cfg.username, cfg.password),
+    authHeader: cfg.password ? buildBasicAuthHeader(cfg.username, cfg.password) : null,
     extraHeaders: cfg.extraHeaders,
     fetchImpl: fetch,
   };
@@ -143,7 +157,11 @@ export async function testEnvironment(
   try {
     const response = await fetch(apiUrl(cfg.baseUrl, probePath), {
       method: "GET",
-      headers: { Authorization: connection.authHeader, Accept: "application/json" },
+      headers: {
+        ...connection.extraHeaders,
+        Accept: "application/json",
+        ...(connection.authHeader ? { Authorization: connection.authHeader } : {}),
+      },
       signal: AbortSignal.timeout(3_000),
     });
     probeStatus = response.status;

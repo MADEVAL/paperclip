@@ -16,6 +16,7 @@ import {
 } from "./protocol.js";
 import {
   apiUrl,
+  buildBasicAuthHeader,
   createTransport,
   detectOpenCodeServerInfo,
   type OpenCodeConnection,
@@ -40,6 +41,7 @@ import {
 } from "./session.js";
 import {
   allowsInsecureRemoteHttp,
+  isLoopbackHostname,
   isRemotePlainHttp,
   remotePlainHttpDeniedMessage,
 } from "./transport-security.js";
@@ -82,10 +84,6 @@ function nonEmpty(value: unknown): string | null {
 
 function issueIdFromContext(ctx: AdapterExecutionContext): string | null {
   return nonEmpty(ctx.context.taskId) ?? nonEmpty(ctx.context.issueId);
-}
-
-function buildAuthHeader(username: string, password: string): string {
-  return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
 }
 
 function createExecutionState(sessionId: string): ExecutionState {
@@ -274,7 +272,7 @@ async function consumeEvents(input: {
         headers: {
           ...input.connection.extraHeaders,
           Accept: "text/event-stream",
-          Authorization: input.connection.authHeader,
+          ...(input.connection.authHeader ? { Authorization: input.connection.authHeader } : {}),
         },
         signal: input.signal,
       });
@@ -411,11 +409,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       errorMessage: remotePlainHttpDeniedMessage(cfg.baseUrl.hostname),
     });
   }
-  if (!cfg.password) {
+  if (!cfg.password && !cfg.allowNoAuth) {
     return failureResult({
       errorCode: "opencode_gateway_password_missing",
       errorMessage:
-        "OpenCode gateway adapter requires password (the OpenCode server basic-auth password; set by OPENCODE_SERVER_PASSWORD).",
+        "OpenCode gateway adapter requires password (the OpenCode server basic-auth password; set by OPENCODE_SERVER_PASSWORD), " +
+        "or set adapterConfig.allowNoAuth to connect to a server that runs without auth.",
     });
   }
 
@@ -434,7 +433,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const connection: OpenCodeConnection = {
     baseUrl: cfg.baseUrl,
-    authHeader: buildAuthHeader(cfg.username, cfg.password),
+    authHeader: cfg.password ? buildBasicAuthHeader(cfg.username, cfg.password) : null,
     extraHeaders: cfg.extraHeaders,
     fetchImpl: fetch,
   };
@@ -531,6 +530,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     "stdout",
     `[opencode-gateway] server=${cfg.apiBaseUrl} api=${apiVersion} version=${detectedVersion ?? "unknown"} qualified=${qualified} session=${strategy}\n`,
   );
+  if (!cfg.password && cfg.allowNoAuth) {
+    const loopback = isLoopbackHostname(cfg.baseUrl.hostname);
+    await ctx.onLog(
+      loopback ? "stdout" : "stderr",
+      loopback
+        ? "[opencode-gateway] connecting without basic auth (server runs without a password).\n"
+        : "[opencode-gateway] warning: connecting without basic auth to a non-loopback server; anyone on the network can drive this agent.\n",
+    );
+  }
 
   // ---- Find or create the OpenCode session --------------------------------
   let sessionId: string | null = null;

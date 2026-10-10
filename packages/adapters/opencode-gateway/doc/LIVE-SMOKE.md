@@ -29,6 +29,11 @@ curl -s -u opencode:smoke-pass http://127.0.0.1:4096/global/health   # V1 -> {"h
 curl -s -u opencode:smoke-pass http://127.0.0.1:4096/api/info        # V2 -> {"version":"2.0.26", ...}
 ```
 
+To test the no-auth path, start the server **without** `OPENCODE_SERVER_PASSWORD`,
+leave the adapter `password` empty, and enable the "Connect without a password"
+toggle (`allowNoAuth`). Using a bare host like `192.168.1.50` also exercises the
+default port 4096.
+
 ## 2. Install the adapter into Paperclip (dev server)
 
 ```sh

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `password` is now optional. A new `allowNoAuth` toggle connects to an OpenCode
+  server that runs without basic auth (no `OPENCODE_SERVER_PASSWORD`); the
+  adapter sends no `Authorization` header and warns for non-loopback hosts.
+- `apiBaseUrl` accepts a bare host or IP, defaults the scheme to `http://`, and
+  defaults a missing port to `4096`.
+- The `model` config field is now a combobox loaded from the public OpenCode Zen
+  and OpenCode Go model catalogs, with free models labelled `(free)`. The list is
+  cached, never throws, and falls back to a baked-in set of known free models.
+
 ## 0.1.0
 
 - Initial external-package release of `opencode_gateway`.

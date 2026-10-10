@@ -7,6 +7,12 @@ describe("normalizeBaseUrl", () => {
     expect(normalizeBaseUrl("https://host:8443/base/?x=1#y")?.toString()).toBe("https://host:8443/base");
   });
 
+  it("defaults the scheme and port for a bare host", () => {
+    expect(normalizeBaseUrl("192.168.1.119")?.toString()).toBe("http://192.168.1.119:4096/");
+    expect(normalizeBaseUrl("gateway.local:4097")?.toString()).toBe("http://gateway.local:4097/");
+    expect(normalizeBaseUrl("https://gateway.example.com")?.toString()).toBe("https://gateway.example.com:4096/");
+  });
+
   it("rejects non-http protocols", () => {
     expect(normalizeBaseUrl("ftp://host")).toBeNull();
     expect(normalizeBaseUrl("not a url")).toBeNull();
@@ -47,6 +53,13 @@ describe("parseGatewayConfig", () => {
     expect(cfg.pollIntervalMs).toBe(1000);
     expect(cfg.permissionAction).toBe("accept");
     expect(cfg.questionPolicy).toBe("reject");
+    expect(cfg.allowNoAuth).toBe(false);
+  });
+
+  it("parses the no-auth option and its alias", () => {
+    expect(parseGatewayConfig({ apiBaseUrl: "192.168.1.119", allowNoAuth: true }).allowNoAuth).toBe(true);
+    expect(parseGatewayConfig({ apiBaseUrl: "192.168.1.119", passwordless: "true" }).allowNoAuth).toBe(true);
+    expect(parseGatewayConfig({ apiBaseUrl: "192.168.1.119" }).allowNoAuth).toBe(false);
   });
 
   it("reads the url alias and normalizes overrides", () => {

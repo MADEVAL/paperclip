@@ -2,6 +2,16 @@ export { execute } from "./execute.js";
 export { testEnvironment } from "./test.js";
 export { getConfigSchema } from "./config-schema.js";
 export { listOpenCodeGatewayModels } from "./models.js";
+export {
+  parseModelCatalog,
+  isFreeModelId,
+  buildModelFieldOptions,
+  catalogToAdapterModels,
+  loadOpenCodeModelCatalog,
+  resetOpenCodeModelCatalogCacheForTests,
+  FALLBACK_OPENCODE_MODELS,
+} from "./free-models.js";
+export { buildBasicAuthHeader } from "./transport.js";
 export { sessionCodec, resolveSessionKey } from "./session.js";
 export {
   createOpenCodeApiClient,

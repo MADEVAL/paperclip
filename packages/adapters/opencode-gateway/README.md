@@ -50,15 +50,46 @@ HTTP basic auth. `Authorization: Basic base64(username:password)`.
 - V2 hard-codes the username to `opencode`.
 - The password is `OPENCODE_SERVER_PASSWORD`.
 
+Auth is optional in OpenCode itself: if the server did not set
+`OPENCODE_SERVER_PASSWORD`, it runs without auth. Set the adapter's
+`allowNoAuth` toggle to connect to such a server; the adapter then sends no
+`Authorization` header. Only do this on loopback or a trusted private network —
+`testEnvironment` warns for a non-loopback passwordless server.
+
 Credentials are never logged; the adapter redacts the password and the encoded
 `Authorization` header from every emitted line.
 
 ## Configuration
 
 See `agentConfigurationDoc` (exported from the package root) and the schema from
-`getConfigSchema()`. Required: `apiBaseUrl`, `password`, `model`
-(`provider/model`). Key optionals: `version`, `directory`,
-`sessionKeyStrategy`, `permissionMode`, `questionPolicy`, `timeoutSec`.
+`getConfigSchema()`.
+
+- Required: `apiBaseUrl`, `model` (plus auth).
+- `apiBaseUrl` accepts a bare host or IP (`192.168.1.50`), `host:port`, or a full
+  URL. A missing scheme defaults to `http://`; a **missing port defaults to
+  `4096`** (OpenCode's server default).
+- Auth: `password`, or `allowNoAuth: true` for a server without a password.
+- Other optionals: `username`, `version`, `directory`, `sessionKeyStrategy`,
+  `permissionMode`, `questionPolicy`, `timeoutSec`, `eventReconnectMs`,
+  `pollIntervalMs`, `paperclipApiUrl`, `headers`.
+
+## Models and free models
+
+The gateway owns the provider catalog, so Paperclip does not enumerate it. To
+make model choice real, the `model` field is a **combobox** whose options are
+loaded from OpenCode's public catalogs at connection time:
+
+- OpenCode Zen: `https://opencode.ai/zen/v1/models` → `opencode/<id>`
+- OpenCode Go: `https://opencode.ai/zen/go/v1/models` → `opencode-go/<id>`
+
+Free models are labelled `(free)` (the `-free` suffix plus the `big-pickle`
+stealth id). Any `provider/model` can still be typed manually. The list is
+cached for 6 hours, never throws, and falls back to a baked-in set of known free
+models when the network is unavailable.
+
+A selected model runs only if the gateway host has that provider connected
+(`opencode auth` / `/connect`). Paperclip never sees or manages those
+credentials. See `src/server/free-models.ts`.
 
 ## Workspace and location
 

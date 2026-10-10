@@ -12,10 +12,14 @@ export interface OpenCodeHttpError extends Error {
 
 export interface OpenCodeConnection {
   baseUrl: URL;
-  /** `Basic base64(user:password)` or any configured Authorization override. */
-  authHeader: string;
+  /** `Basic base64(user:password)`, or null when the server runs without auth. */
+  authHeader: string | null;
   extraHeaders: Record<string, string>;
   fetchImpl: OpenCodeFetch;
+}
+
+export function buildBasicAuthHeader(username: string, password: string): string {
+  return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
 }
 
 export interface OpenCodeServerInfo {
@@ -69,7 +73,7 @@ function buildHeaders(
   const headers: Record<string, string> = {
     ...connection.extraHeaders,
     Accept: accept,
-    Authorization: connection.authHeader,
+    ...(connection.authHeader ? { Authorization: connection.authHeader } : {}),
   };
   const initHeaders = init?.headers;
   if (initHeaders) {

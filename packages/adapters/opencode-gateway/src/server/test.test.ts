@@ -39,6 +39,20 @@ describe("testEnvironment", () => {
     expect(result.checks.some((check) => check.code === "opencode_gateway_gateway_owns_providers")).toBe(true);
   });
 
+  it("allows connecting without auth when allowNoAuth is set", async () => {
+    globalThis.fetch = (async (request: RequestInfo | URL) => {
+      const url = new URL(String(request));
+      if (url.pathname === "/global/health") return json({ healthy: true, version: "1.18.35" });
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+
+    const result = await testEnvironment(
+      makeContext({ apiBaseUrl: "127.0.0.1", allowNoAuth: true, model: "a/b", directory: "/workspace" }),
+    );
+    expect(result.status).not.toBe("fail");
+    expect(result.checks.some((check) => check.code === "opencode_gateway_no_auth_selected")).toBe(true);
+  });
+
   it("reports an auth failure", async () => {
     globalThis.fetch = (async () => new Response(null, { status: 401 })) as typeof fetch;
 

@@ -38,6 +38,7 @@ describe("buildOpenCodeGatewayConfig", () => {
     expect(config.permissionMode).toBe("accept");
     expect(config.questionPolicy).toBe("reject");
     expect(config.sessionKeyStrategy).toBe("issue");
+    expect(config.allowNoAuth).toBe(false);
   });
 
   it("maps shared form fields and schema values", () => {
