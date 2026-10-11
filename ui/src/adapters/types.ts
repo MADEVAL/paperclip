@@ -53,6 +53,12 @@ export interface AdapterConfigFieldsProps {
   managedSandboxOnly?: boolean;
   /** Show Dot for new selections only when its experimental prerequisites are enabled. */
   openAiDotEnabled?: boolean;
+  /**
+   * Schema-driven fields only (`SchemaConfigFields`): field keys to omit because
+   * a bespoke host already renders them (e.g. the new-agent wizard owns the URL
+   * and password inputs and only needs the remaining schema fields).
+   */
+  omitSchemaKeys?: string[];
 }
 
 export interface UIAdapterModule extends TranscriptParserSource {
