@@ -2154,6 +2154,24 @@
       "liveProof": "not-run"
     },
     {
+      "app": "typesafe",
+      "method": "api-key",
+      "auth": "api_key",
+      "policy": "provider-key",
+      "requestedScopes": [],
+      "capability": "read",
+      "supportedActions": "Ask the Jev model typed questions about agent-supplied state: yes/no (noul), multiple choice (choice) and rubric scoring (score). Every answer carries a probability or a confidence, and the model writes no text, calls no tools and edits no files.",
+      "evidence": [
+        "https://docs.typesafe.ai/introduction",
+        "https://docs.typesafe.ai/primitives",
+        "https://docs.typesafe.ai/confidence"
+      ],
+      "reviewedAt": "2026-10-12",
+      "liveProof": "not-run",
+      "keyPermissions": "Content an agent submits for evaluation is sent to TypeSafe. Grant access only to agents whose task content may leave this instance.",
+      "evidenceLimit": "Provider documentation only. No TypeSafe account, key, or model call was used; alias and versioned model availability, calibration and rate limits remain unqualified."
+    },
+    {
       "app": "vercel",
       "method": "mcp-oauth",
       "auth": "oauth",
