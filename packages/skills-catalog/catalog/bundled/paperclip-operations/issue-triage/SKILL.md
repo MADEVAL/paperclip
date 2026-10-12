@@ -48,6 +48,59 @@ For each issue, classify into exactly one of:
 
 If you cannot classify in under a minute of reading, escalate rather than guess.
 
+## Calibrated triage with TypeSafe (optional)
+
+If a TypeSafe connection is assigned to you, the `typesafe` skill is present and
+describes how to ask: the `typesafe_ask` tool on native runners, or
+`paperclipai typesafe ask` / the HTTP route elsewhere. Prefer it over guessing:
+it returns the same verdicts this skill defines, each with a probability or a
+confidence, in one call.
+
+Ask every question about one `state` in a single request:
+
+```json
+{
+  "state": { "issue": "<heartbeat-context>", "signals": "<staleness, blockers, participants>" },
+  "questions": {
+    "verdict": {
+      "type": "choice",
+      "instructions": "Which single next action advances this issue?",
+      "criteria": {
+        "resume": "Execution path is alive; leave it alone",
+        "wake-needed": "Assignee stalled with no live continuation",
+        "reassign": "Assignee is not the right specialty",
+        "unblock": "A first-class blockedByIssue became done or cancelled",
+        "escalate": "Needs a board, CTO, or user decision",
+        "close": "Complete, duplicate, or no longer relevant"
+      }
+    },
+    "assignee_fit": {
+      "type": "noul",
+      "instructions": "Is the current assignee the right specialty for this issue?"
+    },
+    "staleness": {
+      "type": "score",
+      "instructions": "How stalled is this issue?",
+      "criteria": ["Moving", "Slowing", "Stalled"]
+    }
+  }
+}
+```
+
+Rules:
+
+- Act on the reported `verdict` only when its `confidence` is at least `0.7`.
+- Treat `assignee_fit` as a lean reassignment signal: above `0.7` keep, below
+  `0.3` prefer `reassign`.
+- When two verdicts are close in `probabilities`, or every threshold above is
+  missed, do not guess. Escalate with a `request_confirmation`,
+  `ask_user_questions`, or `request_board_approval`, and say what split the call
+  and what you chose.
+- The `state` you send leaves the instance. Do not submit content that must stay
+  private; redact before asking.
+- If the call is unavailable or fails (`403`, `422`, `429`, `502`, `503`), fall
+  back to the heuristics below. Triage must still complete.
+
 ## Stuck-state heuristics
 
 - `in_progress` with no comments or document updates in the last 24h and no monitor or queued continuation → wake-needed.
