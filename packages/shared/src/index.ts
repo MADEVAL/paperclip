@@ -2822,6 +2822,17 @@ export * from "./deepseek-models.js";
 export * from "./types/email.js";
 export * from "./validators/email.js";
 export { configureRailwaySshSchema, type ConfigureRailwaySsh, type RailwaySshSetup } from "./railway-connection.js";
+export {
+  typesafeAskSchema,
+  TYPESAFE_PURPOSES,
+  TYPESAFE_PURPOSE_IDS,
+  enabledTypesafePurposes,
+  isTypesafePurposeAllowed,
+  type TypesafeAsk,
+  type TypesafeAnswer,
+  type TypesafeAskResult,
+  type TypesafePurpose,
+} from "./typesafe.js";
 export * from "./announcements.js";
 
 export { REMOTE_MCP_CONNECTOR_METHODS, isRemoteMcpConnectorId, isRemoteMcpConnectorMethod, type RemoteMcpConnectorId } from "./remote-mcp-connectors.js";

@@ -97,7 +97,7 @@ export function AiProviderSetup({
         reconnect.routing?.kind === "local" ||
         reconnect.routing?.kind === "bedrock"
         ? reconnect.routing.kind
-        : reconnect.provider
+        : (reconnect.provider as ProviderChoice)
       : initialProvider,
   );
   const [step, setStep] = useState(

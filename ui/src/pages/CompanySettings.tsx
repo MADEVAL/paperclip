@@ -30,6 +30,7 @@ import {
 } from "../components/agent-config-primitives";
 import { InstanceGeneralSettings } from "./InstanceGeneralSettings";
 import { DecisionModelSettingsSection } from "../components/decision-models/DecisionModelSettings";
+import { TypesafePurposesCompanySection } from "../features/connections/TypesafePurposes";
 import { useFastResponsesEnabled } from "../hooks/useFastResponsesEnabled";
 
 export function CompanySettings() {
@@ -443,6 +444,8 @@ export function CompanySettings() {
       {fastResponses.loaded && !fastResponses.enabled && (
         <DecisionModelSettingsSection key={selectedCompanyId} companyId={selectedCompanyId!} />
       )}
+
+      {selectedCompanyId && <TypesafePurposesCompanySection key={`typesafe-${selectedCompanyId}`} companyId={selectedCompanyId} />}
 
       <InstanceGeneralSettings embedded />
 

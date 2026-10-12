@@ -2154,6 +2154,26 @@
       "liveProof": "not-run"
     },
     {
+      "app": "typesafe",
+      "method": "api-key",
+      "auth": "api_key",
+      "policy": "provider-key",
+      "requestedScopes": [],
+      "capability": "read",
+      "supportedActions": "Ask the Jev model typed questions about agent-supplied state: yes/no (noul), multiple choice (choice) and rubric scoring (score). Every answer carries a probability or a confidence, and the model writes no text, calls no tools and edits no files.",
+      "evidence": [
+        "https://docs.typesafe.ai/introduction",
+        "https://docs.typesafe.ai/primitives",
+        "https://docs.typesafe.ai/confidence",
+        "https://docs.typesafe.ai/api",
+        "https://docs.typesafe.ai/models"
+      ],
+      "reviewedAt": "2026-10-12",
+      "liveProof": "Not-run before 2026-10-12. Verified live on 2026-10-12 with an operator key: GET /v1/models returned 200 listing jev-latest and jev-preview; connect with a valid key reached health ok with an empty catalog; finish installed the connection for all agents; a governed ask of noul, choice and score questions returned provider model jev-1.13.0 with parsed answers and token usage; the pinned model jev-1.13.0 was accepted although the alias list omits it; an unknown model returned provider 400 mapped to 422 typesafe_invalid_request; an invalid key failed setup with 422 typesafe_api_key_rejected and left no connection or secret; removing the install returned 403. Not exercised live: browser setup screens and the provider 429/529 paths, which the deterministic suites cover.",
+      "keyPermissions": "Content an agent submits for evaluation is sent to TypeSafe. Grant access only to agents whose task content may leave this instance.",
+      "evidenceLimit": "Live proof covered the API client plus the full Paperclip connect/ask path against api.typesafe.ai. Browser setup screens and the 429/529 paths were not exercised live; alias and versioned model availability, calibration and rate limits were not measured beyond the paths above."
+    },
+    {
       "app": "vercel",
       "method": "mcp-oauth",
       "auth": "oauth",

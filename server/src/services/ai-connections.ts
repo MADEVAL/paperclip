@@ -30,6 +30,7 @@ import {
   getAppStoreDefinition,
   aiConnectionMetadataSchema,
   aiSubscriptionNeedsIsolatedLogin,
+  aiProviderHasAgentAdapters,
   isAiConnectionCompatible,
   supportsAiConnectionUsage,
   type AiConnectionBinding,
@@ -208,6 +209,7 @@ export function aiConnectionService(db: Db) {
         );
       const metadata = aiConnectionMetadataSchema.parse(row.connection.config.ai);
       if (metadata.routing) throw unprocessable("Custom providers use an explicit connection selection on the agent.");
+      if (!aiProviderHasAgentAdapters(metadata.provider)) throw unprocessable("This provider is not an agent account.");
       // Keep old servers' method preferences intact during an additive rollout.
       await tx.insert(aiConnectionDefaults)
         .values({ companyId, userId, ...metadata, grantId })
@@ -839,7 +841,7 @@ export function aiConnectionService(db: Db) {
         .from(toolConnections)
         .where(eq(toolConnections.id, id));
       await syncConnectionCredentialBindings(tx, savedConnection, refs);
-      if (input.ownership === "personal" && !routing) {
+      if (input.ownership === "personal" && !routing && aiProviderHasAgentAdapters(input.provider)) {
         await tx
           .insert(aiConnectionDefaults)
           .values({

@@ -25,6 +25,7 @@ export const AI_PROVIDERS: Record<
     logo: "/brands/adapters/grok.svg",
   },
   deepseek: { name: "DeepSeek", logo: "/brands/apps/deepseek.svg" },
+  typesafe: { name: "TypeSafe", logo: "/brands/apps/typesafe.png" },
 };
 
 export type AiConnectionSummary = Omit<AiManagedConnectionSummary, "isDefault"> & { isDefault?: boolean };

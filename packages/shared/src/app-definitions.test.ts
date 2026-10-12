@@ -7,6 +7,7 @@ import {
   APP_STORE_DEFINITIONS,
   APP_STORE_HIDDEN_SLUGS,
   CONNECTABLE_APP_DEFINITIONS,
+  CONNECTABLE_APP_SLUGS,
   appSupportsCatalogSetup,
   getAvailableConnectionMethod,
   getAvailableConnectionMethods,
@@ -879,7 +880,7 @@ describe("AppDefinition catalog", () => {
       "ticktick",
       "xero",
     ]);
-    expect(APP_STORE_DEFINITIONS).toHaveLength(80);
+    expect(APP_STORE_DEFINITIONS).toHaveLength(81);
     const connectableSlugs = new Set(
       CONNECTABLE_APP_DEFINITIONS.map((entry) => entry.slug),
     );
@@ -1357,7 +1358,6 @@ describe("Railway provider", () => {
   });
 });
 
-
 describe("tool method permission review", () => {
   const audit = JSON.parse(fs.readFileSync(new URL("../../../doc/connections/tool-method-permission-reviews.json", import.meta.url), "utf8")) as {
     methods: { app: string; method: string; auth: string; policy: string; requestedScopes: string[]; providerDefaultReason?: string; supportedActions: string; evidence: string[]; reviewedAt: string }[];
@@ -1418,4 +1418,42 @@ it("limits explicit DCR registration preference to remote MCP OAuth methods with
   const nonMcp = structuredClone(entry);
   nonMcp.methods[0]!.transport = "rest_api";
   expect(appDefinitionSchema.safeParse(nonMcp).success).toBe(false);
+});
+
+describe("typesafe", () => {
+  const app = APP_DEFINITIONS.find((entry) => entry.slug === "typesafe");
+  it("is a connectable, store-visible API-key tool app", () => {
+    expect(app).toBeTruthy();
+    expect(CONNECTABLE_APP_SLUGS).toContain("typesafe");
+    expect(APP_STORE_DEFINITIONS.some((entry) => entry.slug === "typesafe")).toBe(true);
+    expect(app!.methods).toHaveLength(2);
+    const method = app!.methods.find((entry) => entry.key === "api-key")!;
+    const aiMethod = app!.methods.find((entry) => entry.key === "ai-api_key")!;
+    expect(aiMethod).toMatchObject({ purpose: "ai", transport: "runtime_auth", auth: "api_key", ai: { provider: "typesafe", method: "api_key" } });
+    expect(method).toMatchObject({
+      key: "api-key",
+      transport: "rest_api",
+      auth: "api_key",
+      riskTier: "S2",
+      keyPlacement: { location: "header", name: "Authorization", prefix: "Bearer " },
+    });
+    expect(method.provider).toBeUndefined();
+    expect(method.credentialFields?.map((field) => field.key)).toEqual(["apiKey"]);
+    const fields = method.extensionFields ?? [];
+    expect(fields[0]).toMatchObject({ key: "model", defaultValue: "jev-latest", advanced: true });
+    const purposes = fields.slice(1);
+    expect(purposes.map((field) => field.key)).toEqual([
+      "purposeIssueTriage",
+      "purposeTaskPlanning",
+      "purposeQaAcceptance",
+      "purposePriority",
+      "purposeInboxGardening",
+      "purposeGuardrails",
+    ]);
+    expect(purposes.every((field) => field.type === "checkbox" && typeof field.defaultValue === "boolean")).toBe(true);
+    expect(method.consoleLinks).toMatchObject({
+      keys: "https://console.typesafe.ai/keys",
+      docs: "https://docs.typesafe.ai/introduction/quickstart",
+    });
+  });
 });

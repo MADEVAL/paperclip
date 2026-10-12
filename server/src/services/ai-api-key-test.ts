@@ -14,6 +14,7 @@ export async function validateAiApiKey(
     xai: "https://api.x.ai/v1/models",
     google: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1",
     deepseek: "https://api.deepseek.com/models",
+    typesafe: "https://api.typesafe.ai/v1/models",
   };
   let response: Response;
   try {

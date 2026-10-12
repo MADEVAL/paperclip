@@ -66,5 +66,52 @@ describe("decision provider contract", () => {
     expect(decisionProviderForConnection({ provider: "openai", method: "api_key", routing: { kind: "gateway", baseUrl: "https://example.com" } })).toBeNull();
     expect(decisionProviderForConnection({ provider: "anthropic", method: "api_key" })).toBeNull();
     expect(decisionProviderForConnection({ provider: "openrouter", method: "api_key", routing: { kind: "openrouter" } })).toBe("openrouter");
+    expect(decisionProviderForConnection({ provider: "typesafe", method: "api_key" })).toBe("typesafe");
+  });
+
+  it("calls TypeSafe direct for a typesafe decision and maps noul to a boolean", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      model: "jev-1.13.0",
+      answers: {
+        billing: { type: "noul", noul: 0.97 },
+        team: { type: "choice", choice: "billing", probabilities: { billing: 0.9, technical: 0.1 }, confidence: 0.85 },
+        severity: { type: "score", score: 0.1, legend: { "0": "a" }, probabilities: { "0": 0.9 }, confidence: 0.9 },
+      },
+      usage: { input_tokens: 100, output_tokens: 5 },
+    }));
+    const result = await runDecisionProvider(
+      { provider: "typesafe", model: "jev-latest", apiKey: "selected-credential", request: DECISION_TEST_REQUEST, signal: new AbortController().signal },
+      { fetch: transport },
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
+    const [url, options] = transport.mock.calls[0];
+    expect(String(url)).toBe("https://api.typesafe.ai/v1/systemone");
+    expect(new Headers(options?.headers).get("authorization")).toBe("Bearer selected-credential");
+    expect(result.answers).toMatchObject({
+      billing: { type: "boolean", probability: 0.97 },
+      team: { type: "choice", choice: "billing", confidence: 0.85 },
+      severity: { type: "score", score: 0.1 },
+    });
+    // TypeSafe bills $42 per billion input tokens only: 100 tokens = 0.0004200 cents.
+    expect(result.receipt.costCents).toBe("0.0004200");
+    expect(result.receipt.costStatus).toBe("estimated");
+    const body = JSON.parse(String(options?.body));
+    expect(body.model).toBe("jev-latest");
+    expect(body.questions.billing.type).toBe("noul");
+    expect(body.questions.team.type).toBe("choice");
+    expect(JSON.stringify(result)).not.toContain("charged twice");
+  });
+
+  it("maps a rejected TypeSafe key to an unpriced auth failure without a retry", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ error: { message: "PRIVATE STATE AND KEY" } }, { status: 401 }));
+    const result = await runDecisionProvider(
+      { provider: "typesafe", model: "jev-latest", apiKey: "key", request: DECISION_TEST_REQUEST, signal: new AbortController().signal },
+      { fetch: transport },
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(result.answers).toBeUndefined();
+    expect(result.errorCode).toBe("provider_auth_failed");
+    expect(result.noProviderWork).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE");
   });
 });
