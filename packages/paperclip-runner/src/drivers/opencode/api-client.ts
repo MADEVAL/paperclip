@@ -132,7 +132,10 @@ export interface OpenCodeApiClient {
     modelID: string;
     prompt: string;
     system?: string;
-    /** V1 reasoning variant (openrouter). V2 ignores this field. */
+    /**
+     * V1 reasoning variant (openrouter). The driver only sets this for the V1
+     * client; V2 has no per-turn variant and does not receive it.
+     */
     variant?: string;
   }): Promise<void>;
   interrupt(sessionId: string): Promise<void>;

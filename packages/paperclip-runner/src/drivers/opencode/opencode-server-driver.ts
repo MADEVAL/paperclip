@@ -679,7 +679,14 @@ class OpenCodeHarnessSession implements HarnessSession {
   }
 
   supportsTurnReasoning(): boolean {
-    return this.#model.startsWith("openrouter/");
+    // Only OpenCode 1.x exposes a per-turn reasoning variant. V2 replaced the
+    // model `variant` with agent-bound settings that cannot be toggled on a
+    // single turn, so advertising per-turn reasoning there would silently drop
+    // the request and leave the provider default in place.
+    return (
+      this.#runtime.apiVersion === "v1" &&
+      this.#model.startsWith("openrouter/")
+    );
   }
 
   async startTurn(input: {
@@ -689,8 +696,10 @@ class OpenCodeHarnessSession implements HarnessSession {
     if (this.#activeTurnId !== null)
       throw new Error("OpenCode session already has an active turn");
     const reasoningMode = parseOpenCodeReasoningMode(input.reasoningMode);
-    if (input.reasoningMode !== undefined && !this.#model.startsWith("openrouter/")) {
-      throw new Error("Per-turn OpenCode reasoning is supported only for OpenRouter models");
+    if (input.reasoningMode !== undefined && !this.supportsTurnReasoning()) {
+      throw new Error(
+        "Per-turn OpenCode reasoning is supported only for OpenRouter models on OpenCode 1.x",
+      );
     }
     const turnId = `turn-${randomBytes(12).toString("hex")}`;
     this.#streamingParts.clear();
@@ -721,9 +730,9 @@ class OpenCodeHarnessSession implements HarnessSession {
       // so the instructions must accompany every prompt, including recovery.
       // V2 carries them on the selected agent, so its client ignores this field.
       system: this.#systemInstructions,
-      // V1 selects reasoning through the model variant; V2 carries it on the
-      // selected agent, so its client ignores this field.
-      ...(providerID === "openrouter"
+      // V1 selects reasoning through the model variant. V2 does not advertise
+      // per-turn reasoning, so never send a variant there.
+      ...(providerID === "openrouter" && this.#runtime.apiVersion === "v1"
         ? { variant: reasoningMode === "disabled" ? "paperclip-no-reasoning" : "paperclip-default" }
         : {}),
     });

@@ -2653,6 +2653,16 @@ describe("OpenCodeServerDriver", () => {
     expect(session.ids()).toMatchObject({ providerSessionId: "ses_fake_1" });
     expect(requests.some((entry) => entry.startsWith("GET /api/info"))).toBe(true);
     expect(requests).toContain("POST /api/session");
+    // V2 has no per-turn reasoning variant, so the session must not advertise
+    // it, and an explicit request must fail loudly instead of being silently
+    // dropped (which would leave the provider's default reasoning in place).
+    expect(session.supportsTurnReasoning?.()).toBe(false);
+    await expect(
+      session.startTurn({
+        message: { role: "user", text: "finish" },
+        reasoningMode: "disabled",
+      }),
+    ).rejects.toThrow("Per-turn OpenCode reasoning is supported only for OpenRouter models on OpenCode 1.x");
 
     const config = JSON.parse(
       await readFile(
