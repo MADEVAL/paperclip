@@ -1,4 +1,4 @@
-import type { InteractionResolverGovernance } from "@paperclipai/shared";
+import { CAVEMAN_ULTRA_DIRECTIVE, type InteractionResolverGovernance } from "@paperclipai/shared";
 import { numeric, pgTable, uuid, text, integer, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const companies = pgTable(
@@ -24,8 +24,13 @@ export const companies = pgTable(
       .notNull()
       .default({}),
     // Company-wide directive prepended to every agent run's task context (see
-    // Company Settings). Null means none.
-    agentInstructionsPrefix: text("agent_instructions_prefix"),
+    // Company Settings -> Agent instructions). New companies default to the
+    // built-in CAVEMAN ULTRA directive so every run of a freshly created
+    // company starts with the house output style. The value stays editable and
+    // can be cleared in Company Settings (null means none).
+    agentInstructionsPrefix: text("agent_instructions_prefix").default(
+      CAVEMAN_ULTRA_DIRECTIVE,
+    ),
     // When true and no custom prefix is set, the built-in CAVEMAN ULTRA
     // directive is used. Off by default.
     agentInstructionsEnabled: boolean("agent_instructions_enabled")
