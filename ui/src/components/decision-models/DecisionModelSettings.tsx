@@ -14,13 +14,14 @@ const failureMessages: Record<string, string> = {
   not_configured: "Choose and save a connection first.", disabled: "Enable and save decisions before running a test.",
   connection_unavailable: "The connection is unavailable. Reconnect it and try again.",
   access_denied: "This connection is not shared with you. Review its permissions.",
-  incompatible_connection: "Choose a supported OpenAI or OpenRouter API connection.",
+  incompatible_connection: "Choose a supported OpenAI, OpenRouter or TypeSafe API connection.",
   budget_blocked: "The company or task budget prevents this request. Review Costs and Budgets.",
   provider_auth_failed: "The provider rejected the connection. Reconnect it and try again.",
   provider_rate_limited: "The provider is rate limited. Try again later.",
   timeout: "The provider did not respond in time. Billing is unresolved; review Costs.",
   refused: "The model declined the test. Review the connection and try again.",
 };
+const DECISION_PROVIDER_LABELS: Record<DecisionProvider, string> = { openai: "OpenAI", openrouter: "OpenRouter", typesafe: "TypeSafe" };
 export function DecisionModelSettingsView({ settings, choices, saving, testing, error, result, newlyConnectedId, onSave, onTest, onAdd }: {
   settings: DecisionModelSettings; choices: DecisionConnectionChoice[]; saving?: boolean; testing?: boolean;
   error?: string | null; result?: DecisionResult | null; newlyConnectedId?: string | null;
@@ -53,7 +54,7 @@ export function DecisionModelSettingsView({ settings, choices, saving, testing, 
         icon: <AppLogo name={row.provider === "openai" ? "OpenAI" : "OpenRouter"} brandKey={row.provider} size={24} />,
       }))}
       onSelect={grantId => { const row = choices.find(choice => choice.grantId === grantId)!; setDraft(value => ({ ...value, connectionId: row.id, grantId, enabled: value.connectionId ? value.enabled : true })); }} />
-    {choices.length === 0 && <p className="text-sm text-muted-foreground">Add a shared OpenAI or OpenRouter API connection to get started.</p>}
+    {choices.length === 0 && <p className="text-sm text-muted-foreground">Add a shared OpenAI, OpenRouter or TypeSafe API connection to get started.</p>}
     {draft.connectionId && !selected && <p role="status" className="text-sm text-muted-foreground">The saved connection is unavailable to you. Disable decisions or choose another connection.</p>}
     <div className="flex flex-wrap items-center gap-3">
       <Button variant="outline" size="sm" onClick={onAdd} disabled={saving || testing}>Add connection</Button>
@@ -117,10 +118,10 @@ export function DecisionModelSettingsSection({ companyId }: { companyId: string 
             const refreshed = await query.refetch();
             if ("connectionId" in result && result.connectionId && refreshed.data?.choices.some(row => row.id === result.connectionId)) setNewlyConnectedId(result.connectionId);
             setAdding(false);
-          }} /> : <ConnectionChoiceList choices={(Object.keys(DECISION_MODELS) as DecisionProvider[]).map(id => ({ id,
-            name: id === "openai" ? "OpenAI" : "OpenRouter", description: DECISION_MODELS[id].name,
-            icon: <AppLogo name={id === "openai" ? "OpenAI" : "OpenRouter"} brandKey={id} size={24} />,
-          }))} onSelect={id => setProvider(id as DecisionProvider)} />}
+          }} /> : <ConnectionChoiceList choices={(Object.keys(DECISION_MODELS) as DecisionProvider[]).map(id => {
+            const name = DECISION_PROVIDER_LABELS[id];
+            return { id, name, description: DECISION_MODELS[id].name, icon: <AppLogo name={name} brandKey={id} size={24} /> };
+          })} onSelect={id => setProvider(id as DecisionProvider)} />}
       </DialogContent>
     </Dialog>
   </>;
