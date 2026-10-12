@@ -133,6 +133,7 @@ export function providerDisplayName(provider: string): string {
     chatgpt: "ChatGPT",
     google: "Google",
     deepseek: "DeepSeek",
+    typesafe: "TypeSafe",
     cursor: "Cursor",
     jetbrains: "JetBrains AI",
   };

@@ -8,7 +8,7 @@ export const choices: DecisionConnectionChoice[] = ["openai", "openrouter"].map(
   name: i === 0 ? "Company OpenAI" : "Company OpenRouter", isDefault: false, status: "connected",
   decisionModel: i === 0 ? "gpt-6-luna" : "typesafe/jev-1.13",
 }));
-export const unconfigured: DecisionModelSettings = { companyId, enabled: false, allowBackground: true, connectionId: null, grantId: null, provider: null, model: null };
+export const unconfigured: DecisionModelSettings = { companyId, enabled: false, allowBackground: true, connectionId: null, grantId: null, provider: null, model: null, purposes: {} };
 export const configured: DecisionModelSettings = { ...unconfigured, enabled: true, connectionId: choices[0]!.id, grantId: choices[0]!.grantId, provider: "openai", model: "gpt-6-luna" };
 export const result: DecisionResult = { status: "succeeded", invocationId: "decision-fixture", answers: {
   billing: { type: "boolean", probability: 0.99 }, team: { type: "choice", choice: "billing", probabilities: { billing: 0.98, technical: 0.02 } }, severity: { type: "score", score: 0.08 },

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
-import { DECISION_TEST_REQUEST, updateDecisionModelSchema } from "@paperclipai/shared";
+import { DECISION_TEST_REQUEST, updateDecisionModelSchema, updateDecisionPurposesSchema } from "@paperclipai/shared";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { canManageAiConnections } from "./ai-connections.js";
 import { forbidden } from "../errors.js";
@@ -24,6 +24,12 @@ export function decisionModelRoutes(db: Db) {
     assertCompanyAccess(req, companyId); assertBoard(req);
     if (!(await canManageAiConnections(db, req, companyId))) throw forbidden("Manage connections permission is required");
     res.json(await service.configure(companyId, getActorInfo(req).actorId, req.body));
+  });
+  router.put("/companies/:companyId/decision-model/purposes", validate(updateDecisionPurposesSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId); assertBoard(req);
+    if (!(await canManageAiConnections(db, req, companyId))) throw forbidden("Manage connections permission is required");
+    res.json({ purposes: await service.configurePurposes(companyId, getActorInfo(req).actorId, req.body) });
   });
   router.get("/companies/:companyId/decision-model/availability", async (req, res) => {
     const companyId = req.params.companyId as string;

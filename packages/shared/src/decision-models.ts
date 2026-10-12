@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AiManagedConnectionSummary } from "./ai-connections.js";
+import type { TypesafePurpose } from "./typesafe.js";
 
 export const DECISION_MODELS = {
   openai: { id: "gpt-6-luna", name: "GPT-6 Luna" },
@@ -23,9 +24,16 @@ export interface DecisionModelSettings extends UpdateDecisionModel {
   companyId: string;
   provider: DecisionProvider | null;
   model: string | null;
+  /** Company-level Jev purpose enablement. Absent or false means disabled. */
+  purposes: Record<string, boolean>;
 }
+export type DecisionPurpose = TypesafePurpose;
+export const updateDecisionPurposesSchema = z.object({
+  purposes: z.record(z.string(), z.boolean()),
+}).strict();
+export type UpdateDecisionPurposes = z.infer<typeof updateDecisionPurposesSchema>;
 export type DecisionConnectionChoice = AiManagedConnectionSummary & { decisionModel: string };
-export type DecisionUnavailableReason = "not_configured" | "disabled" | "connection_unavailable" | "incompatible_connection" | "access_denied" | "responsible_user_missing" | "background_disabled" | "budget_blocked";
+export type DecisionUnavailableReason = "not_configured" | "disabled" | "connection_unavailable" | "incompatible_connection" | "access_denied" | "responsible_user_missing" | "background_disabled" | "budget_blocked" | "purpose_disabled";
 export type DecisionAvailability = { available: true } | { available: false; reason: DecisionUnavailableReason };
 const instructions = z.string().trim().min(1).max(8000);
 export const decisionQuestionSchema = z.discriminatedUnion("type", [

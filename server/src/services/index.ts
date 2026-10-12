@@ -219,3 +219,4 @@ export {
 } from "./remote-agent-profiles.js";
 
 export { decisionModelService, defineDecisionFeature } from "./decision-models.js";
+export { issuesClassify, suggestIssuePriority, DECISION_FEATURES } from "./decision-features.js";

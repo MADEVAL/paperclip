@@ -13,6 +13,7 @@ import {
   toggleAllGitHubRepositoriesSchema,
   createAiConnectionSchema,
   updateDecisionModelSchema,
+  updateDecisionPurposesSchema,
   aiConnectionPoolConfigSchema,
   aiConnectionLoginIntentSchema,
   localAiConnectionSchema,
@@ -1377,6 +1378,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/fast-response/test",
   "GET /api/companies/{companyId}/decision-model",
   "PUT /api/companies/{companyId}/decision-model",
+  "PUT /api/companies/{companyId}/decision-model/purposes",
   "POST /api/companies/{companyId}/decision-model/test",
   ...browserUseOperations.map(([method, path]) => `${method.toUpperCase()} ${path}`),
   "GET /api/companies/{companyId}/ai-connections",
@@ -10969,6 +10971,11 @@ registerCurrentRoute({
 registerCurrentRoute({
   method: "put", path: "/api/companies/{companyId}/decision-model", tags: ["decision-models"],
   summary: "Configure the company decision model as a connection manager", body: updateDecisionModelSchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+registerCurrentRoute({
+  method: "put", path: "/api/companies/{companyId}/decision-model/purposes", tags: ["decision-models"],
+  summary: "Save the company direct-Jev purpose switches as a connection manager", body: updateDecisionPurposesSchema,
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
 });
 registerCurrentRoute({

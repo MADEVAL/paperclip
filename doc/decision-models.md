@@ -6,6 +6,8 @@ Decision model setup remains available in Company Settings → General when fast
 
 V1 supports native OpenAI Decisions (`gpt-6-luna`) and OpenRouter Decisions (`typesafe/jev-1.13`). It accepts company-owned API keys only. Personal grants, subscription credentials, custom endpoints, fallback chains, images, and public agent/plugin execution tools are outside this version. Decision compatibility is separate from CLI-adapter compatibility.
 
+This branch additionally supports **direct TypeSafe Jev** (`typesafe`, model `jev-latest`) on a shared company TypeSafe API key, skipping the OpenRouter hop. A connection manager adds it from the decision connection dialog exactly like an OpenAI connection; the key step is the TypeSafe API-key card. Direct Jev purposes are **company-level switches** in Decision model settings: every purpose starts off, and `resolve` refuses a direct TypeSafe call whose feature purpose is not enabled with `purpose_disabled`. The purpose ids are the same canonical list the TypeSafe connector uses (`packages/shared/src/typesafe.ts`). The gate applies only to the direct TypeSafe provider; OpenAI and OpenRouter are unaffected.
+
 ## Internal service
 
 Register a feature once in its server module, then call `decisionModelService(db)` with trusted server context:
@@ -44,7 +46,7 @@ Cost events have `usageKind: decision` and may have no agent. Agentless reportin
 
 Admission and settlement use the company accounting lock. Company and applicable agent/project budgets include held reservations and observed spend. Reservations use the largest configured applicable reservation amount. Settlement is idempotent. Explicit provider authentication/validation/rate-limit rejection releases the hold when no model work occurred. Uncertain dispatches, timeouts, and unknown prices remain unpriced with the reservation held. Startup/periodic accounting recovery marks stale invocations interrupted without resubmitting them. Use the existing audited cost adjustment workflow to resolve the charge and release its hold, including a verified zero charge when appropriate.
 
-OpenRouter-reported USD costs are converted to fractional cents. OpenAI uses a dedicated, versioned Decisions rate snapshot: $0.10 per million input tokens for the bounded short requests at the native default endpoint. No chat-model price is substituted. Missing usage or an unsupported rate stays unknown; it is never displayed as a free request. The ledger retains seven decimal places in cents. Pricing provenance accompanies the cost event and remains available to accounting corrections.
+OpenRouter-reported USD costs are converted to fractional cents. OpenAI uses a dedicated, versioned Decisions rate snapshot: $0.10 per million input tokens for the bounded short requests at the native default endpoint. Direct TypeSafe Jev uses its own versioned rate snapshot (`typesafe-jev-2026-10-12`): 4.2 cents per million input tokens, input only. No chat-model price is substituted. Missing usage or an unsupported rate stays unknown; it is never displayed as a free request. The ledger retains seven decimal places in cents. Pricing provenance accompanies the cost event and remains available to accounting corrections.
 
 History follows company cost visibility and rechecks task access before returning task/run links. It shows the latest 100 requests in the selected date window. Input/output contents remain absent after refresh.
 
@@ -56,6 +58,7 @@ All paths are under `/api/companies/:companyId/decision-model`:
 | --- | --- |
 | `GET /` | Board; returns manager capability and settings/compatible choices to connection managers |
 | `PUT /` | Connection manager; validates and audits configuration |
+| `PUT /purposes` | Connection manager; saves the company direct-Jev purpose switches |
 | `GET /availability` | Authenticated company caller; local authorization check |
 | `POST /test` | Connection manager; fixed server-owned three-question sample, ignoring client prompts/identity |
 | `GET /history` | Existing company cost-read rules; date bounds and limit up to 500 |

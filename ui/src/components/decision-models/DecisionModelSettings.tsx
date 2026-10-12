@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { DECISION_MODELS, type DecisionConnectionChoice, type DecisionModelSettings, type DecisionProvider, type DecisionResult, type UpdateDecisionModel } from "@paperclipai/shared";
+import { DECISION_MODELS, TYPESAFE_PURPOSES, type DecisionConnectionChoice, type DecisionModelSettings, type DecisionProvider, type DecisionResult, type UpdateDecisionModel } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { decisionModelsApi } from "@/api/decision-models";
+import { providerDisplayName } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ToggleField } from "@/components/agent-config-primitives";
 import { ConnectionChoiceList } from "@/features/connections/ConnectionChoiceList";
@@ -16,20 +18,24 @@ const failureMessages: Record<string, string> = {
   access_denied: "This connection is not shared with you. Review its permissions.",
   incompatible_connection: "Choose a supported OpenAI, OpenRouter or TypeSafe API connection.",
   budget_blocked: "The company or task budget prevents this request. Review Costs and Budgets.",
+  purpose_disabled: "This Jev purpose is switched off. Enable it under Decision model to use this feature.",
   provider_auth_failed: "The provider rejected the connection. Reconnect it and try again.",
   provider_rate_limited: "The provider is rate limited. Try again later.",
   timeout: "The provider did not respond in time. Billing is unresolved; review Costs.",
   refused: "The model declined the test. Review the connection and try again.",
 };
 const DECISION_PROVIDER_LABELS: Record<DecisionProvider, string> = { openai: "OpenAI", openrouter: "OpenRouter", typesafe: "TypeSafe" };
-export function DecisionModelSettingsView({ settings, choices, saving, testing, error, result, newlyConnectedId, onSave, onTest, onAdd }: {
-  settings: DecisionModelSettings; choices: DecisionConnectionChoice[]; saving?: boolean; testing?: boolean;
+export function DecisionModelSettingsView({ settings, choices, saving, testing, purposesSaving, error, result, newlyConnectedId, onSave, onTest, onAdd, onSavePurposes }: {
+  settings: DecisionModelSettings; choices: DecisionConnectionChoice[]; saving?: boolean; testing?: boolean; purposesSaving?: boolean;
   error?: string | null; result?: DecisionResult | null; newlyConnectedId?: string | null;
   onSave: (value: UpdateDecisionModel) => void; onTest: () => void; onAdd: () => void;
+  onSavePurposes?: (purposes: Record<string, boolean>) => void;
 }) {
   const [draft, setDraft] = useState<Required<UpdateDecisionModel>>(settings);
+  const [purposeDraft, setPurposeDraft] = useState<Record<string, boolean> | null>(null);
   const appliedConnection = useRef<string | null>(null);
   useEffect(() => { setDraft(settings); }, [settings.companyId, settings.connectionId, settings.grantId, settings.enabled, settings.allowBackground]);
+  useEffect(() => { setPurposeDraft(null); }, [settings.companyId]);
   useEffect(() => {
     if (!newlyConnectedId) { appliedConnection.current = null; return; }
     if (appliedConnection.current === newlyConnectedId) return;
@@ -41,6 +47,8 @@ export function DecisionModelSettingsView({ settings, choices, saving, testing, 
   }, [newlyConnectedId, choices]);
   const selected = choices.find(row => row.grantId === draft.grantId);
   const dirty = draft.enabled !== settings.enabled || draft.allowBackground !== settings.allowBackground || draft.grantId !== settings.grantId;
+  const purposeValue = purposeDraft ?? settings.purposes;
+  const purposeDirty = JSON.stringify(purposeValue) !== JSON.stringify(settings.purposes);
   const unavailable = result && result.status !== "succeeded" ? failureMessages[result.status === "unavailable" ? result.reason : result.errorCode] ?? "The decision could not be completed. Review its entry in Costs." : null;
   return <section aria-labelledby="decision-model-heading" className="max-w-2xl space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -51,7 +59,7 @@ export function DecisionModelSettingsView({ settings, choices, saving, testing, 
     <ConnectionChoiceList selectedId={draft.grantId ?? undefined} disabled={saving || testing}
       choices={choices.map(row => ({ id: row.grantId, name: row.name,
         description: `${row.decisionModel} · ${row.status === "connected" ? "Connected" : "Needs attention"}`,
-        icon: <AppLogo name={row.provider === "openai" ? "OpenAI" : "OpenRouter"} brandKey={row.provider} size={24} />,
+        icon: <AppLogo name={providerDisplayName(row.provider)} brandKey={row.provider} size={24} />,
       }))}
       onSelect={grantId => { const row = choices.find(choice => choice.grantId === grantId)!; setDraft(value => ({ ...value, connectionId: row.id, grantId, enabled: value.connectionId ? value.enabled : true })); }} />
     {choices.length === 0 && <p className="text-sm text-muted-foreground">Add a shared OpenAI, OpenRouter or TypeSafe API connection to get started.</p>}
@@ -77,6 +85,22 @@ export function DecisionModelSettingsView({ settings, choices, saving, testing, 
       </div>)}</dl>
       <p className="text-xs text-muted-foreground">Usage was recorded. Test answers are not saved.</p>
     </div>}
+    {settings.provider === "typesafe" && <section aria-labelledby="decision-purposes-heading" className="space-y-3 rounded-lg border border-border p-4">
+      <div className="space-y-1">
+        <h3 id="decision-purposes-heading" className="text-sm font-medium">Where Paperclip may use Jev</h3>
+        <p className="text-sm text-muted-foreground">Every purpose starts off. Turn one on to let that background feature ask Jev; each enabled purpose can spend on this connection.</p>
+      </div>
+      <div className="space-y-3">{TYPESAFE_PURPOSES.map(purpose => {
+        const id = `decision-purpose-${purpose.id}`;
+        const checked = purposeValue[purpose.id] === true;
+        return <div key={purpose.id} className="flex items-start justify-between gap-4">
+          <div className="space-y-0.5"><label htmlFor={id} className="text-sm">{purpose.label}</label><p className="text-xs text-muted-foreground">{purpose.description}</p></div>
+          <ToggleSwitch id={id} checked={checked} disabled={saving || testing || purposesSaving}
+            onCheckedChange={next => setPurposeDraft(value => ({ ...(value ?? purposeValue), [purpose.id]: next }))} />
+        </div>;
+      })}</div>
+      {purposeDirty && <div className="flex justify-end"><Button onClick={() => onSavePurposes?.(purposeValue)} disabled={saving || testing || purposesSaving || !onSavePurposes}>{purposesSaving ? "Saving…" : "Save purposes"}</Button></div>}
+    </section>}
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="space-y-1">
         <Button variant="outline" size="sm" disabled={!settings.enabled || dirty || saving || testing || selected?.status !== "connected"} onClick={onTest}>{testing ? "Running test…" : "Run test"}</Button>
@@ -101,14 +125,20 @@ export function DecisionModelSettingsSection({ companyId }: { companyId: string 
   const save = useMutation({ mutationFn: (settings: UpdateDecisionModel) => decisionModelsApi.update(companyId, settings), onSuccess: settings => {
     setNewlyConnectedId(null); test.reset(); client.setQueryData(key, { ...query.data, settings });
   } });
+  const purposes = useMutation({ mutationFn: (values: Record<string, boolean>) => decisionModelsApi.updatePurposes(companyId, values), onSuccess: ({ purposes: saved }) => {
+    const current = query.data;
+    if (current?.settings) client.setQueryData(key, { ...current, settings: { ...current.settings, purposes: saved } });
+  } });
   if (query.isPending) return <p className="text-sm text-muted-foreground">Loading decision model…</p>;
   if (query.error) return <div role="alert" className="space-y-2"><p className="text-sm text-destructive">Could not load decision settings.</p><Button variant="outline" onClick={() => void query.refetch()}>Try again</Button></div>;
   if (!query.data?.canManage || !query.data.settings) return null;
   return <>
     <DecisionModelSettingsView settings={query.data.settings} choices={query.data.choices} saving={save.isPending} testing={test.isPending}
+      purposesSaving={purposes.isPending}
       error={save.error?.message ?? (test.variables === settingsRevision ? test.error?.message : undefined)}
       result={test.variables === settingsRevision ? test.data : null} newlyConnectedId={newlyConnectedId}
-      onSave={value => save.mutate(value)} onTest={() => test.mutate(settingsRevision)} onAdd={() => { setProvider(null); setAdding(true); }} />
+      onSave={value => save.mutate(value)} onTest={() => test.mutate(settingsRevision)} onAdd={() => { setProvider(null); setAdding(true); }}
+      onSavePurposes={values => purposes.mutate(values)} />
     <Dialog open={adding} onOpenChange={setAdding}>
       <DialogContent className="sm:max-w-2xl max-h-(--sz-85vh) overflow-y-auto">
         <DialogHeader><DialogTitle>Add a decision connection</DialogTitle><DialogDescription>Use a shared API connection for company decisions.</DialogDescription></DialogHeader>

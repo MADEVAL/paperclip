@@ -5,6 +5,7 @@ import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
 import { retryIdempotentDatabaseOperation } from "../database-retry.js";
 import { externalConversationStateSql, nonIdleSlackIssueCondition, resumeSlackConversation } from "./slack-conversation-state.js";
 import { documentService } from "./documents.js";
+import { suggestIssuePriority } from "./decision-features.js";
 import { parseTaskSearch, taskSearchCtes, taskSearchScore } from "./task-search.js";
 import { createdFromIssueCondition } from "./issue-creation-origin.js";
 import { executionProjectionsForRuns } from "./execution-projection.js";
@@ -9966,6 +9967,8 @@ export function issueService(db: Db) {
       ) {
         throw unprocessable("in_progress issues require an assignee");
       }
+      // Captured for a best-effort direct-Jev classification after the commit.
+      const createdRef: { current: typeof issues.$inferSelect | null } = { current: null };
       const persist = async (tx: DbTransaction) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`issue-privacy-tree:${companyId}`}, 0))`);
         await assertExecutionTaskParent(tx as unknown as Db, companyId, issueData.parentId);
@@ -10414,6 +10417,7 @@ export function issueService(db: Db) {
         );
 
         const [issue] = await tx.insert(issues).values(values).returning();
+        createdRef.current = issue;
         await attachOwnedDraftImages(tx, issue, issue.description, { userId: issueData.createdByUserId, agentId: issueData.createdByAgentId });
         if (issue.visibility === "private" && !inheritedPrivateSubtree && issueData.createdByAgentId) {
           await tx.insert(issueAccessGrants).values({
@@ -10478,8 +10482,15 @@ export function issueService(db: Db) {
         );
         return withRelations;
       };
-      if (dbOrTx === db) return db.transaction(persist);
-      return persist(dbOrTx as DbTransaction);
+      const created = dbOrTx === db ? await db.transaction(persist) : await persist(dbOrTx as DbTransaction);
+      // Best-effort direct-Jev classification. Inert unless the company enabled
+      // the `priority` purpose and saved a shared TypeSafe connection. It never
+      // blocks the create and never fails it.
+      if (createdRef.current) {
+        const issueId = createdRef.current.id;
+        void suggestIssuePriority(db, { companyId, issueId }).catch(() => {});
+      }
+      return created;
     },
 
     /**

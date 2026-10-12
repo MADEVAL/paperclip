@@ -13,6 +13,9 @@ export const companyDecisionModels = pgTable("company_decision_models", {
   allowBackground: boolean("allow_background").notNull().default(true),
   provider: text("provider"),
   model: text("model"),
+  // Company-level Jev purpose switches for direct TypeSafe decisions. Absent or
+  // false means the purpose is disabled; enabling a purpose is an explicit opt-in.
+  purposes: jsonb("purposes").$type<Record<string, boolean>>().notNull().default({}),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, t => ({ configured: check("company_decisions_configured", sql`(${t.connectionId} is null) = (${t.grantId} is null) and (not ${t.enabled} or (${t.connectionId} is not null and ${t.provider} is not null and ${t.model} is not null))`) }));
 

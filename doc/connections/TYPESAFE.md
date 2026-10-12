@@ -199,12 +199,7 @@ feature is required to use them.
 
 ### What this connector does not wire up
 
-- It is **not** connected to the internal **Decision models** feature
-  (`server/src/services/decision-model-provider.ts`). That feature keeps routing
-  Jev through OpenRouter (`typesafe/jev-1.13`) and is untouched. The two paths
-  stay parallel and independent: an operator can keep OpenRouter for internal
-  background decisions while agents use the direct TypeSafe connector, or use
-  either alone.
+- It is **independent** of the internal **Decision models** feature, but that feature can now also call Jev **direct**. On this branch `DECISION_MODELS.typesafe` (`jev-latest`) is a first-class decision provider (`server/src/services/decision-model-provider.ts`); the setup dialog adds it as a shared TypeSafe AI connection, and its purposes are company-level switches. The connector stays a parallel, agent-facing path with its own per-connection purposes: an operator can use direct Jev for background decisions while agents use the connector, OpenRouter (`typesafe/jev-1.13`) for decisions, or any combination.
 - It exposes no **catalog actions**, so it has no per-action **Test** button and
   no board-side control surface. The catalog is always empty by design; a
   connection is proven by its health check and by an agent run.

@@ -35,7 +35,10 @@ type Props = {
 
 /** Connections hosts the same provider step as agent setup, with its own save intent. */
 export function AiConnectionCredentialStep(props: Props) {
-  if (props.provider === "openrouter" || props.provider === "google" || props.provider === "deepseek") return <ApiKeyConnectionStep {...props} />;
+  // API-key-only providers never use the subscription sign-in chrome. TypeSafe
+  // (Jev) has no subscription and no agent adapter, so it must render the
+  // TypeSafe API-key card instead of the OpenAI/Codex subscription step.
+  if (props.provider === "openrouter" || props.provider === "google" || props.provider === "deepseek" || props.provider === "typesafe") return <ApiKeyConnectionStep {...props} />;
   return <SubscriptionConnectionStep {...props} />;
 }
 

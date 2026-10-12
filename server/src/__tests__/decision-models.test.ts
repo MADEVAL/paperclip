@@ -154,7 +154,7 @@ describe("company decision service", () => {
     await expect(f.service.configure(f.companyId, "alice", { ...other.config })).rejects.toThrow();
     await db.update(companyMemberships).set({ status: "inactive" }).where(and(eq(companyMemberships.companyId, f.companyId), eq(companyMemberships.principalId, "alice")));
     expect(await f.service.availability(f.context)).toMatchObject({ available: false, reason: "access_denied" });
-    expect(await f.service.decide({ ...f.context, feature: { id: "settings.test", background: true }, actor: { type: "system" } }, DECISION_TEST_REQUEST)).toMatchObject({ status: "unavailable", reason: "access_denied" });
+    expect(await f.service.decide({ ...f.context, feature: { id: "settings.test", background: true, purpose: null }, actor: { type: "system" } }, DECISION_TEST_REQUEST)).toMatchObject({ status: "unavailable", reason: "access_denied" });
   });
   it("captures the active run identity and checks both human and agent access", async () => {
     const f = await fixture(), issueId = randomUUID(), runId = randomUUID();
@@ -291,5 +291,23 @@ describe("company decision service", () => {
     const history = await f.service.history(f.companyId, actor);
     expect(history[0]).toMatchObject({ issueId: null, issueIdentifier: null, runId: null });
     expect(JSON.stringify(history)).not.toContain("SECRET");
+  });
+  it("gates direct TypeSafe purposes at the company level and ignores them for other providers", async () => {
+    const f = await fixture();
+    const typesafe = await f.connections.save(f.companyId, "alice", { provider: "typesafe", method: "api_key", name: "Jev direct", ownership: "shared", apiKey: "jev-key", agentIds: [], allAgents: true }, "jev-key");
+    await f.service.configure(f.companyId, "alice", { ...typesafe, enabled: true, allowBackground: true });
+    const prioritise = defineDecisionFeature("test.typesafe.priority", { background: true, purpose: "priority" });
+    const context: DecisionContext = { companyId: f.companyId, feature: prioritise, actor: { type: "system" } };
+    expect(await f.service.availability(context)).toEqual({ available: false, reason: "purpose_disabled" });
+    expect(await f.service.decide(context, DECISION_TEST_REQUEST)).toMatchObject({ status: "unavailable", reason: "purpose_disabled" });
+    expect(await f.service.configurePurposes(f.companyId, "alice", { purposes: { priority: true } })).toEqual({ priority: true });
+    expect((await f.service.settings(f.companyId)).purposes).toEqual({ priority: true });
+    expect(await f.service.availability(context)).toEqual({ available: true });
+    expect((await f.service.decide(context, DECISION_TEST_REQUEST)).status).toBe("succeeded");
+    await expect(f.service.configurePurposes(f.companyId, "alice", { purposes: { not_a_purpose: true } })).rejects.toThrow();
+    // The purpose gate applies only to the direct TypeSafe provider.
+    const openai = await f.connections.save(f.companyId, "alice", { provider: "openai", method: "api_key", name: "OpenAI key", ownership: "shared", apiKey: "openai-key", agentIds: [], allAgents: true }, "openai-key");
+    await f.service.configure(f.companyId, "alice", { ...openai, enabled: true, allowBackground: true });
+    expect(await f.service.availability(context)).toEqual({ available: true });
   });
 });

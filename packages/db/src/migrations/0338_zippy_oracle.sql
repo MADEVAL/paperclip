@@ -1,0 +1,1 @@
+ALTER TABLE "company_decision_models" ADD COLUMN "purposes" jsonb DEFAULT '{}'::jsonb NOT NULL;

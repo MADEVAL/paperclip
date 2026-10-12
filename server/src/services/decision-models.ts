@@ -5,9 +5,9 @@ import {
   decisionInvocations, heartbeatRuns, issues, projects, companySecrets, type Db,
 } from "@paperclipai/db";
 import {
-  DECISION_MODELS, decisionProviderForConnection, decisionRequestSchema, updateDecisionModelSchema,
+  DECISION_MODELS, TYPESAFE_PURPOSE_IDS, decisionProviderForConnection, decisionRequestSchema, updateDecisionModelSchema, updateDecisionPurposesSchema,
   centsToUnits, unitsToCents, type DecisionAvailability, type DecisionConnectionChoice, type DecisionHistoryEntry,
-  type DecisionModelSettings, type DecisionProvider, type DecisionRequest, type DecisionResult, type DecisionUnavailableReason, type UpdateDecisionModel,
+  type DecisionModelSettings, type DecisionProvider, type DecisionRequest, type DecisionResult, type DecisionUnavailableReason, type TypesafePurpose, type UpdateDecisionModel,
 } from "@paperclipai/shared";
 import { HttpError, forbidden, unprocessable } from "../errors.js";
 import { aiConnectionService } from "./ai-connections.js";
@@ -21,9 +21,10 @@ import { decisionReceipt, runDecisionProvider, type DecisionProviderOutcome } fr
 
 const registeredFeatures = new WeakSet<object>();
 /** Register once in a server module. Feature handles cannot be supplied over JSON/API. */
-export function defineDecisionFeature(id: string, options: { background?: boolean } = {}) {
+export function defineDecisionFeature(id: string, options: { background?: boolean; purpose?: TypesafePurpose } = {}) {
   if (!/^[a-z][a-z0-9_.-]{0,99}$/.test(id)) throw new Error("Invalid decision feature identifier");
-  const feature = Object.freeze({ id, background: options.background === true });
+  if (options.purpose && !TYPESAFE_PURPOSE_IDS.includes(options.purpose)) throw new Error("Invalid decision feature purpose");
+  const feature = Object.freeze({ id, background: options.background === true, purpose: options.purpose ?? null });
   registeredFeatures.add(feature);
   return feature;
 }
@@ -54,7 +55,7 @@ export function decisionModelService(db: Db, options: { provider?: typeof runDec
   async function settings(companyId: string): Promise<DecisionModelSettings> {
     const [row] = await db.select().from(companyDecisionModels).where(eq(companyDecisionModels.companyId, companyId));
     return row ? { ...row, provider: row.provider as DecisionProvider | null } : {
-      companyId, enabled: false, allowBackground: true, connectionId: null, grantId: null, provider: null, model: null,
+      companyId, enabled: false, allowBackground: true, connectionId: null, grantId: null, provider: null, model: null, purposes: {},
     };
   }
   async function choices(companyId: string, userId: string): Promise<DecisionConnectionChoice[]> {
@@ -79,6 +80,22 @@ export function decisionModelService(db: Db, options: { provider?: typeof runDec
       await logActivity(tx, { companyId, actorType: "user", actorId: userId, action: "decision_model.configured", entityType: "company", entityId: companyId,
         details: { ...data, provider: values.provider, model: values.model } }, publications);
       return values;
+    });
+  }
+  async function configurePurposes(companyId: string, userId: string, input: unknown) {
+    const { purposes } = updateDecisionPurposesSchema.parse(input);
+    const allowed = new Set<string>(TYPESAFE_PURPOSE_IDS);
+    for (const [key, value] of Object.entries(purposes)) {
+      if (!allowed.has(key)) throw unprocessable("Unknown decision purpose", { code: "unknown_decision_purpose" });
+      if (typeof value !== "boolean") throw unprocessable("Decision purposes must be boolean");
+    }
+    return withAccountingTransaction(db, companyId, async (tx, publications) => {
+      await tx.insert(companyDecisionModels).values({ companyId, purposes }).onConflictDoUpdate({
+        target: companyDecisionModels.companyId, set: { purposes, updatedAt: new Date() },
+      });
+      await logActivity(tx, { companyId, actorType: "user", actorId: userId, action: "decision_model.purposes_configured",
+        entityType: "company", entityId: companyId, details: { purposes } }, publications);
+      return purposes;
     });
   }
   async function resolve(context: DecisionContext, executor = db) {
@@ -124,6 +141,9 @@ export function decisionModelService(db: Db, options: { provider?: typeof runDec
     const connection = await aiConnectionService(executor).selectDecision({ companyId: context.companyId,
       connectionId: config.connectionId, grantId: config.grantId, userId, agentId, sponsoredBackground: actor.type === "system" });
     if (connection.provider !== config.provider || config.model !== DECISION_MODELS[connection.provider].id) throw new DecisionUnavailable("incompatible_connection");
+    // Direct Jev purposes are a company opt-in. Non-TypeSafe providers are unaffected.
+    if (connection.provider === "typesafe" && context.feature.purpose && config.purposes?.[context.feature.purpose] !== true)
+      throw new DecisionUnavailable("purpose_disabled");
     return { config, connection, userId, agentId, runId, identityContextId, issueId, projectId,
       actorType: actor.type === "board" ? "user" as const : actor.type === "agent" ? "agent" as const : "system" as const,
       actorId: actor.type === "system" ? "paperclip-decisions" : agentId ?? userId! };
@@ -269,5 +289,5 @@ export function decisionModelService(db: Db, options: { provider?: typeof runDec
         costCents: cost.costStatus === "unpriced" ? null : cost.costCents, costStatus: cost.costStatus };
     }));
   }
-  return { settings, choices, configure, availability, availabilityForRequest, decide, recoverInterrupted, history };
+  return { settings, choices, configure, configurePurposes, availability, availabilityForRequest, decide, recoverInterrupted, history };
 }
