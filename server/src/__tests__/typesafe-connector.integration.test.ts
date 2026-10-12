@@ -452,4 +452,27 @@ describeEmbeddedPostgres("TypeSafe connector", () => {
     expect(markdown).toContain(connectionId);
     expect(markdown).not.toContain(KEY);
   });
+
+  it("collapses two assigned connections into one skill with two resources", async () => {
+    const { companyId, first, connectionId } = await fixture("first_agent");
+    const secondConnectionId = await connectTypesafe(companyId, "first_agent", first.id, {
+      model: "jev-preview",
+    });
+    const assignments = await resolveConnectorAssignments(db, { companyId, agentId: first.id });
+    const typesafe = assignments.filter((assignment) => assignment.key === "typesafe");
+    expect(typesafe).toHaveLength(1);
+    expect(
+      typesafe[0]!.resources.map((resource) => resource.connectionId).sort(),
+    ).toEqual([connectionId, secondConnectionId].sort());
+
+    const config = await applyConnectorSkills({}, [], assignments);
+    const skills = config.paperclipRuntimeSkills.filter(
+      (entry) => entry.key === "paperclipai/paperclip/typesafe",
+    );
+    expect(skills).toHaveLength(1);
+    const markdown = await fs.readFile(path.join(skills[0]!.source, "SKILL.md"), "utf8");
+    expect(markdown).toContain(connectionId);
+    expect(markdown).toContain(secondConnectionId);
+    expect(markdown).not.toContain(KEY);
+  });
 });

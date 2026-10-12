@@ -51,6 +51,7 @@
       ],
       "guidanceMd": "Create an API key in your TypeSafe account and paste it here. Agents you select can then ask Jev questions about text or data from their tasks.",
       "consoleLinks": {
+        "keys": "https://console.typesafe.ai/keys",
         "docs": "https://docs.typesafe.ai/introduction/quickstart"
       },
       "warnings": [

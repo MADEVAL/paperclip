@@ -194,7 +194,7 @@ const apps = [
     keyPlacement: { location: "header", name: "Authorization", prefix: "Bearer " },
     extensionFields: [{ key: "model", label: "Model", type: "text", placeholder: "jev-latest", defaultValue: "jev-latest", advanced: true }],
     guidanceMd: "Create an API key in your TypeSafe account and paste it here. Agents you select can then ask Jev questions about text or data from their tasks.",
-    consoleLinks: { docs: "https://docs.typesafe.ai/introduction/quickstart" },
+    consoleLinks: { keys: "https://console.typesafe.ai/keys", docs: "https://docs.typesafe.ai/introduction/quickstart" },
     warnings: ["Content an agent submits for evaluation is sent to TypeSafe. Grant access only to agents whose task content may leave this instance."],
     riskTier: "S2",
   }],

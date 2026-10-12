@@ -1439,5 +1439,9 @@ describe("typesafe", () => {
     expect(method.extensionFields).toEqual([
       expect.objectContaining({ key: "model", defaultValue: "jev-latest", advanced: true }),
     ]);
+    expect(method.consoleLinks).toMatchObject({
+      keys: "https://console.typesafe.ai/keys",
+      docs: "https://docs.typesafe.ai/introduction/quickstart",
+    });
   });
 });

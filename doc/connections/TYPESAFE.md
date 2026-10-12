@@ -6,7 +6,7 @@ probability or a confidence. Jev does not write text, call tools or edit files,
 so it is a tool that agents call, not an agent adapter.
 
 Provider facts come from `https://docs.typesafe.ai` (`api.md`, `models.md`),
-read on 2026-09-20.
+read and live-confirmed on 2026-10-12 against `https://api.typesafe.ai/v1`.
 
 ## Connection shape
 
@@ -125,25 +125,93 @@ decides whether to retry.
 
 ## Live proof
 
-Run on 2026-09-20 against `https://api.typesafe.ai/v1` with an operator key,
-through the real service code and an embedded database. Only the key was
-external. No key, state or answer text is recorded here.
+Run on 2026-10-12 against `https://api.typesafe.ai/v1` with an operator key,
+through the real service code (`toolAccessService` connect/finish and
+`executeTypesafeAsk`) and an embedded database. Only the key was external. No
+key, state or answer text is recorded here.
 
 | Step | Result |
 | --- | --- |
-| `GET /v1/models` | 200. Body is `{ models: [{ name, description, release_date }] }`. It lists `jev-latest` and `jev-preview` only. |
-| Connect with an invalid key | 422 `typesafe_api_key_rejected`. No connection and no secret remain. |
+| `GET /v1/models` | 200. Lists `jev-latest` and `jev-preview` only. The response also carries `description` and `release_date` per entry. |
+| Connect with an invalid key | Provider 401. Paperclip setup fails with 422 `typesafe_api_key_rejected`. No connection and no secret remain. |
 | Connect with a valid key | Health "ok", "TypeSafe API key is connected.", empty catalog. |
-| Finish with all agents, then ask 3 questions (`noul`, `choice`, `score`) | 200. Provider model `jev-1.13.0`. Usage 390 input and 73 output tokens. All three answer shapes parse. |
-| Ask with the pinned model `jev-1.13.0` | 200. The list omits this ID and the provider accepts it. |
-| Ask with an unknown model | Provider 400 `api_usage_error`. Paperclip returns 422 `typesafe_invalid_request`. |
-| Activity rows | Model, question count and token usage only. The pinned model shows as redacted, as described above. |
+| Finish with all agents | One company install row exists. |
+| Ask 3 questions (`noul`, `choice`, `score`) through the governed service path | 200. Provider model `jev-1.13.0`. Each answer parses to its own type; `choice` and `score` carry `confidence`. Usage 382 input and 73 output tokens (counts vary per run). |
+| Ask with the pinned model `jev-1.13.0` | 200. The alias list omits this ID and the provider still accepts it. |
+| Ask with an unknown model | Provider 400. Paperclip returns 422 `typesafe_invalid_request`. |
+| Activity rows | Model, question count and token usage only; no state, instructions, criteria or answers. |
 | Remove the install, then ask | 403. |
+| A `score` with one level, sent directly to the provider | 200 (`score` 0, `confidence` 1). The documented minimum is two, so Paperclip keeps that stricter minimum. |
 
 Not covered by this run: the setup screens against the real provider in a
 browser, and the 429 and 529 paths, which the provider did not produce. The
 setup screens are covered by `AppsConnect.test.tsx` and by the interactive
-stories in `ui/storybook/stories/typesafe-connect-flow.stories.tsx`.
+stories in `ui/storybook/stories/typesafe-connect-flow.stories.tsx`; the 429 and
+529 mappings are covered by `server/src/__tests__/typesafe-api.test.ts` and the
+connector integration suite.
 
-One difference from the provider documentation: the API accepts a `score` with
-one level. Paperclip keeps the documented minimum of two.
+## Where Paperclip can use Jev
+
+Jev is an evaluator, not a chat model: it turns a `state` plus typed questions
+into calibrated decisions. This connector therefore fits wherever a Paperclip
+step needs a structured judgement that code can branch on. It does not replace
+the model behind an agent, and it does not write text, call tools or edit files.
+
+### Surfaces
+
+| Surface | Who reaches it | Notes |
+| --- | --- | --- |
+| Native runner tool `typesafe_ask` | `paperclip_runner` agents | Advertised only while the connector skill is in the run's pinned bundle. |
+| CLI `paperclipai typesafe ask --file <request.json>` | Any agent runtime with the CLI | The CLI forwards `PAPERCLIP_RUN_ID` as `X-Paperclip-Run-Id`. |
+| HTTP `POST /api/companies/{companyId}/typesafe/ask` | Any agent runtime | Agent key plus `X-Paperclip-Run-Id`; a board user has no install to resolve. |
+
+Every call re-checks the same gates: the connection belongs to the agent's
+company, is active/enabled/healthy, has an install for the company or the agent,
+tool policy allows `typesafe.ask`, and (on HTTP) the run is running and owned by
+the calling agent. Removing the install stops an already-running call.
+
+### Suitable tasks
+
+These are the shapes Jev is built for (see the provider's primitives and
+patterns pages). Each maps to real Paperclip work an agent can already do
+through the surfaces above.
+
+- **Route or classify (`choice`).** Pick the owning team, project, agent, or
+  skill for a task; decide whether an issue needs a plan or a human; choose
+  between named next steps. Confidence tells the agent whether to act or ask.
+- **Score against a rubric (`score`).** Rate severity, priority, risk, effort,
+  or the quality of a plan, PR description, or hand-off. Branch on the number
+  and state the threshold.
+- **Yes/no gates (`noul`).** Check preconditions before acting: does a task have
+  acceptance criteria, is a change in scope, is a comment on-topic, is inbound
+  content safe to process.
+- **Rank or re-rank.** Score candidate issues, wakes, or retrieved passages and
+  sort by the probability-weighted value.
+- **Select an extracted value.** Given pre-parsed candidates, choose the right
+  span or field and normalise it in code.
+
+Because the tool is available to any agent in any task and any run, these are
+reachable today through normal agent prompts and skills. No new Paperclip
+feature is required to use them.
+
+### What this connector does not wire up
+
+- It is **not** connected to the internal **Decision models** feature
+  (`server/src/services/decision-model-provider.ts`). That feature keeps routing
+  Jev through OpenRouter (`typesafe/jev-1.13`) and is untouched. The two paths
+  stay parallel and independent: an operator can keep OpenRouter for internal
+  background decisions while agents use the direct TypeSafe connector, or use
+  either alone.
+- It exposes no **catalog actions**, so it has no per-action **Test** button and
+  no board-side control surface. The catalog is always empty by design; a
+  connection is proven by its health check and by an agent run.
+- It records token **usage** in the `typesafe.ask` activity row but writes no
+  **cost event**. Jev bills per input token; cost visibility would need a
+  pricing snapshot like the Decision models ledger, which is out of scope here.
+
+### Not this connector
+
+The provider's own documentation is explicit that Jev is not a coding-agent
+model and there is no `model: "jev-latest"` swap for an agent. Paperclip uses it
+the same way: as a tool an agent calls for a decision, not as the agent's brain.
+
