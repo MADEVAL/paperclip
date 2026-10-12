@@ -34,3 +34,48 @@ Respect planning mode and explicit approval requests. When approval is required,
 request confirmation of the latest plan revision and wait for that decision.
 After acceptance, execute cohesive work on the current ordinary task. Use
 `paperclip-converting-plans-to-tasks` when delegation is justified.
+
+## Calibrated plan review with TypeSafe (optional)
+
+If a TypeSafe connection is assigned to you, the `typesafe` skill is present and
+describes how to ask (`typesafe_ask` on native runners, or `paperclipai typesafe
+ask` / the HTTP route elsewhere). Use it as a review gate before you accept or
+request approval for a plan.
+
+Ask every question about the plan in one call:
+
+```json
+{
+  "state": { "goal": "<issue goal>", "plan": "<latest plan revision>" },
+  "questions": {
+    "verifiable": {
+      "type": "noul",
+      "instructions": "Does the plan state a concrete outcome and how to verify it?"
+    },
+    "coverage": {
+      "type": "score",
+      "instructions": "How well does the plan cover outcome, constraints, approach and verification?",
+      "criteria": ["Missing", "Partial", "Complete"]
+    },
+    "readiness": {
+      "type": "choice",
+      "instructions": "Is the plan ready to execute?",
+      "criteria": {
+        "ready": "Clear outcome, approach and verification",
+        "needs-detail": "A named section is missing or vague",
+        "blocked": "Depends on an unresolved decision or unknown"
+      }
+    }
+  }
+}
+```
+
+Rules:
+
+- Accept or request approval only when `readiness = ready` with `confidence` at
+  least `0.7` and `verifiable` at least `0.7`.
+- Otherwise revise the plan naming the exact gap, then re-ask. Do not silently
+  downgrade a `needs-detail`/`blocked` verdict.
+- The plan text leaves the instance. Redact anything that must stay private
+  before asking; if the call fails (`403`, `422`, `429`, `502`, `503`), proceed
+  on your own judgement and say so.

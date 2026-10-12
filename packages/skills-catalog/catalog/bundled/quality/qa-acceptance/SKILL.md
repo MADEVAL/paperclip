@@ -91,3 +91,48 @@ The author owns turning failures into either fixes or accepted deferrals.
 - Criteria that depend on inspecting implementation details (selectors, query plans). Stay observable.
 - Long checklists with no priority. Mark must-pass criteria distinctly from nice-to-have.
 - Validation reports that say "passed" with no evidence. Reviewers cannot audit those.
+
+## Calibrated acceptance with TypeSafe (optional)
+
+If a TypeSafe connection is assigned to you, the `typesafe` skill is present and
+describes how to ask (`typesafe_ask` on native runners, or `paperclipai typesafe
+ask` / the HTTP route elsewhere). Use it to check a plan's coverage before you
+run the pass, and to score each must-pass criterion.
+
+Ask about one plan in one call:
+
+```json
+{
+  "state": { "change": "<change summary>", "acceptance": ["<criterion 1>", "<criterion 2>"] },
+  "questions": {
+    "coverage": {
+      "type": "score",
+      "instructions": "How well does the plan cover the eight required areas: golden path, empty/minimum, boundaries, errors, concurrency, performance, compatibility, telemetry?",
+      "criteria": ["Major gaps", "Some gaps", "Complete"]
+    },
+    "independent": {
+      "type": "noul",
+      "instructions": "Is every acceptance criterion a single, independently-verifiable Given/When/Then statement?"
+    },
+    "verdict": {
+      "type": "choice",
+      "instructions": "Is this validation plan ready to run?",
+      "criteria": {
+        "ready": "Coverage and criteria are complete",
+        "revise": "A named area or criterion is missing"
+      }
+    }
+  }
+}
+```
+
+Rules:
+
+- Run the pass only when `verdict = ready` with `confidence` at least `0.7` and
+  `independent` at least `0.7`. Otherwise revise the plan first and re-ask.
+- For a run with several must-pass criteria, ask one `noul` per criterion in a
+  single call ("does `acceptance[i]` pass given the `state`?") and combine the
+  results in code. Keep the screenshot/log/network evidence you already gather.
+- The change and criteria leave the instance. Redact private data before asking;
+  if the call fails (`403`, `422`, `429`, `502`, `503`), continue manually and
+  say so.
