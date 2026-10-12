@@ -15,6 +15,7 @@ import {
 } from "@paperclipai/shared";
 import { priceCodexReceipt } from "./codex-pricing.js";
 import { priceAnthropicReceipt } from "./anthropic-pricing.js";
+import { priceDeepSeekReceipt } from "./deepseek-pricing.js";
 import type { AdapterUsageCheckpoint } from "@paperclipai/adapter-utils";
 import type { DecisionProviderReceipt } from "./decision-model-provider.js";
 
@@ -169,6 +170,16 @@ export function fastResponseModel(
       reasoning: { effort: "low", exclude: true },
       usage: { include: true },
     });
+  if (route?.kind === "deepseek" || (!route && metadata.provider === "deepseek")) {
+    // DeepSeek is a native API-key provider (it stores no routing) that speaks
+    // OpenAI-compatible chat completions at its official endpoint. Without this
+    // branch a DeepSeek account falls through to the xAI client and fails.
+    return createOpenAI({
+      ...common,
+      baseURL: baseURL ?? "https://api.deepseek.com",
+      apiKey: credential,
+    }).chat(model);
+  }
   if (
     route?.protocol === "messages" ||
     (!route && metadata.provider === "anthropic")
@@ -293,9 +304,11 @@ export async function runFastResponseProvider(
         },
       };
       const priced =
-        input.metadata.provider === "openai"
-          ? priceCodexReceipt(checkpoint)
-          : priceAnthropicReceipt(checkpoint);
+        input.metadata.provider === "deepseek"
+          ? priceDeepSeekReceipt(checkpoint, new Date(), { kind: "deepseek" })
+          : input.metadata.provider === "openai"
+            ? priceCodexReceipt(checkpoint)
+            : priceAnthropicReceipt(checkpoint);
       if (
         priced.costUsdExact != null &&
         priced.pricingProvenance?.source === "rate_card"

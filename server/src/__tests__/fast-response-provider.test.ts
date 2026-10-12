@@ -37,7 +37,7 @@ const input = (metadata: AiConnectionMetadata) => ({
   signal: AbortSignal.timeout(3000),
 });
 const connections: AiConnectionMetadata[] = [
-  ...(["openrouter", "openai", "anthropic", "google", "xai"] as const).map(
+  ...(["openrouter", "openai", "anthropic", "google", "xai", "deepseek"] as const).map(
     (provider) => ({ provider, method: "api_key" as const }),
   ),
   {
@@ -368,6 +368,26 @@ describe("fast response provider", () => {
     expect(JSON.parse(String(init.body)).generationConfig.maxOutputTokens).toBe(
       256,
     );
+  });
+  it("routes a native DeepSeek account to its OpenAI-compatible endpoint and prices it", async () => {
+    const body = chatResponse();
+    delete (body.usage as { cost?: number }).cost;
+    const fetch = vi.fn(async () => response(body));
+    const result = await runFastResponseProvider(
+      { ...input({ provider: "deepseek", method: "api_key" }), model: "deepseek-flash" },
+      { fetch },
+    );
+    expect(result.text).toBe(ack);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.deepseek.com/chat/completions");
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer fixture-key");
+    expect(JSON.parse(String(init.body))).toMatchObject({ model: "deepseek-flash" });
+    expect(result.receipt).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 15,
+      costStatus: "estimated",
+      pricingProvenance: { source: "rate_card" },
+    });
   });
   it("supports Bedrock region, bearer key and Converse", async () => {
     const fetch = vi.fn(async () =>
