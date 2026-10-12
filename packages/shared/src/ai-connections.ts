@@ -33,6 +33,7 @@ export const AI_PROVIDERS = [
   "openrouter",
   "xai",
   "google",
+  "typesafe",
 ] as const;
 export const aiProviderSchema = z.enum(AI_PROVIDERS);
 export const aiAuthMethodSchema = z.enum(["subscription", "api_key"]);
@@ -110,7 +111,21 @@ export const AI_CONNECTION_CAPABILITIES: Record<
       api_key: { adapters: ["grok_local"], envKey: "XAI_API_KEY" },
     },
   },
+  // Decision-only provider: it authenticates the internal Decision models
+  // feature, never an agent runtime, so it lists no agent adapter.
+  typesafe: {
+    name: "TypeSafe",
+    methods: {
+      api_key: { adapters: [], envKey: "TYPESAFE_API_KEY" },
+    },
+  },
 };
+/** True when at least one agent adapter can run this provider (chat providers, not decision-only ones). */
+export function aiProviderHasAgentAdapters(provider: AiProvider): boolean {
+  return Object.values(AI_CONNECTION_CAPABILITIES[provider].methods).some(
+    (method) => (method?.adapters?.length ?? 0) > 0,
+  );
+}
 export function isAiConnectionCompatible(
   requirement: AiConnectionMetadata | AiConnectionBinding,
   adapterType: string,

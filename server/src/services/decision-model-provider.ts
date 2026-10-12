@@ -1,7 +1,8 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { experimental_decide as decide, type Experimental_DecisionModel } from "ai";
-import { centsToUnits, unitsToCents, type DecisionAnswer, type DecisionProvider, type DecisionRequest } from "@paperclipai/shared";
+import { centsToUnits, unitsToCents, type DecisionAnswer, type DecisionProvider, type DecisionRequest, type TypesafeAskResult } from "@paperclipai/shared";
+import { TypesafeApiError, typesafeApi } from "./typesafe-api.js";
 
 export interface DecisionProviderReceipt {
   inputTokens: number | null; outputTokens: number | null; providerRequestId: string | null;
@@ -37,11 +38,75 @@ export function decisionReceipt(provider: DecisionProvider, result: unknown): De
     return { ...base, costCents: unitsToCents(centsToUnits("10") * BigInt(inputTokens) / 1_000_000n), costStatus: "estimated",
       pricingProvenance: { source: "rate_card", version: "openai-decisions-2026-10-07", inputCentsPerMillion: "10.0000000" } };
   }
+  // TypeSafe bills per input token only: $42 per billion = 4.2 cents per million.
+  if (provider === "typesafe" && inputTokens !== null) {
+    return { ...base, costCents: unitsToCents(centsToUnits("4.2") * BigInt(inputTokens) / 1_000_000n), costStatus: "estimated",
+      pricingProvenance: { source: "rate_card", version: "typesafe-jev-2026-10-12", inputCentsPerMillion: "4.2000000" } };
+  }
   return { ...base, costCents: null, costStatus: "unpriced", pricingProvenance: { source: "unknown" } };
 }
+
+/** Decision questions are Paperclip-shaped; TypeSafe calls its yes/no type `noul`. */
+function typesafeQuestions(request: DecisionRequest): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  for (const [id, question] of Object.entries(request.questions)) {
+    if (question.type === "boolean") questions[id] = { type: "noul", instructions: question.instructions };
+    else if (question.type === "choice") questions[id] = { type: "choice", instructions: question.instructions, criteria: question.criteria };
+    else questions[id] = { type: "score", instructions: question.instructions, criteria: question.criteria };
+  }
+  return questions;
+}
+
+function typesafeAnswers(answers: TypesafeAskResult["answers"]): Record<string, DecisionAnswer> {
+  const out: Record<string, DecisionAnswer> = {};
+  for (const [id, answer] of Object.entries(answers)) {
+    if (answer.type === "noul") {
+      out[id] = { type: "boolean", probability: answer.noul };
+    } else if (answer.type === "choice") {
+      out[id] = { type: "choice", choice: answer.choice, probabilities: answer.probabilities, confidence: answer.confidence };
+    } else {
+      out[id] = { type: "score", score: answer.score, probabilities: answer.probabilities, confidence: answer.confidence };
+    }
+  }
+  return out;
+}
+
+async function runTypesafeDecision(
+  input: { model: string; apiKey: string; request: DecisionRequest; signal: AbortSignal },
+  options: { fetch?: typeof fetch },
+): Promise<DecisionProviderOutcome> {
+  try {
+    const result = await typesafeApi(input.apiKey, options.fetch).evaluate({
+      state: input.request.state,
+      model: input.model,
+      questions: typesafeQuestions(input.request),
+    });
+    return {
+      answers: typesafeAnswers(result.answers),
+      receipt: decisionReceipt("typesafe", { usage: { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens } }),
+    };
+  } catch (error) {
+    // Provider bodies can echo the submitted state; never forward them.
+    const apiError = error instanceof TypesafeApiError ? error : null;
+    const status = apiError?.status ?? null;
+    const errorCode = input.signal.aborted ? "timeout"
+      : apiError?.code === "typesafe_rate_limited" ? "provider_rate_limited"
+      : apiError?.code === "typesafe_api_key_rejected" ? "provider_auth_failed"
+      : apiError?.code === "typesafe_invalid_request" ? "provider_failed"
+      : "provider_failed";
+    const noProviderWork = status !== null && [400, 401, 403, 404, 422, 429].includes(status);
+    const receipt = noProviderWork
+      ? { ...decisionReceipt("typesafe", null), inputTokens: 0, outputTokens: 0, costCents: "0.0000000", costStatus: "estimated" as const,
+          pricingProvenance: { source: "unknown" as const, evidence: `Provider rejected request before model work (HTTP ${status})` } }
+      : decisionReceipt("typesafe", null);
+    return { errorCode, receipt, noProviderWork };
+  }
+}
+
 export async function runDecisionProvider(input: {
   provider: DecisionProvider; model: string; apiKey: string; request: DecisionRequest; signal: AbortSignal;
 }, options: { fetch?: typeof fetch } = {}): Promise<DecisionProviderOutcome> {
+  if (input.provider === "typesafe") return runTypesafeDecision(input, options);
   const native = input.provider === "openai"
     ? createOpenAI({ apiKey: input.apiKey, fetch: options.fetch }).decisionModel(input.model)
     : createOpenRouter({ apiKey: input.apiKey, fetch: options.fetch }).evaluationModel(input.model);

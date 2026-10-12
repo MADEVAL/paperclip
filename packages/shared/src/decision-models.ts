@@ -4,6 +4,9 @@ import type { AiManagedConnectionSummary } from "./ai-connections.js";
 export const DECISION_MODELS = {
   openai: { id: "gpt-6-luna", name: "GPT-6 Luna" },
   openrouter: { id: "typesafe/jev-1.13", name: "Jev 1.13" },
+  // Direct TypeSafe: the same Jev model, called on the account's own key
+  // instead of through OpenRouter.
+  typesafe: { id: "jev-latest", name: "Jev (TypeSafe direct)" },
 } as const;
 export type DecisionProvider = keyof typeof DECISION_MODELS;
 export const updateDecisionModelSchema = z.object({
@@ -69,5 +72,6 @@ export function decisionProviderForConnection(metadata: { provider: string; meth
   if (metadata.method !== "api_key") return null;
   if (metadata.provider === "openai" && !metadata.routing) return "openai";
   if (metadata.provider === "openrouter" && (!metadata.routing || (metadata.routing.kind === "openrouter" && !metadata.routing.baseUrl))) return "openrouter";
+  if (metadata.provider === "typesafe" && !metadata.routing) return "typesafe";
   return null;
 }

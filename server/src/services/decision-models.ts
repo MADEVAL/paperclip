@@ -155,7 +155,7 @@ export function decisionModelService(db: Db, options: { provider?: typeof runDec
         usageKind: "decision", responsibleUserId: invocation.responsibleUserId, ...links,
         // Run attribution lives on the invocation. Run receipt reconciliation must not ingest this independent charge.
         heartbeatRunId: null, idempotencyKey: `decision:${invocation.id}`,
-        provider: invocation.provider === "openrouter" ? "typesafe" : "openai", biller: invocation.provider,
+        provider: invocation.provider === "openai" ? "openai" : "typesafe", biller: invocation.provider,
         billingType: "metered_api", costStatus: receipt.costStatus, model: invocation.model,
         inputTokens: receipt.inputTokens ?? 0, outputTokens: receipt.outputTokens ?? 0, costCents: receipt.costCents ?? "0",
         providerRequestId: receipt.providerRequestId, pricingProvenance: receipt.pricingProvenance, occurredAt: invocation.startedAt,

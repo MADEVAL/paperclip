@@ -187,7 +187,7 @@ const apps = [
     guidanceMd: "Connect an AgentMail API key, then create or select an inbox for your agent. WebSocket receiving works without a public URL.",
     consoleLinks: { keys: "https://console.agentmail.to/dashboard/api-keys", docs: "https://docs.agentmail.to/inboxes" }, riskTier: "S3", requiredResourceFilters: ["inbox"]
   }],
-  ["typesafe", "TypeSafe", "Ask the Jev model yes/no, multiple-choice and scoring questions and get calibrated answers.", "ai", "typesafe.ai", ["https://docs.typesafe.ai/*"], {
+  ["typesafe", "TypeSafe", "Ask the Jev model yes/no, multiple-choice and scoring questions and get calibrated answers.", "ai", "typesafe.ai", ["https://docs.typesafe.ai/*"], [{
     key: "api-key", label: "Connect with an API key", transport: "rest_api", auth: "api_key", ownershipModes: ["customer"],
     whenToUse: "Use a TypeSafe API key so agents can ask Jev typed questions.",
     credentialFields: [{ key: "apiKey", label: "TypeSafe API key", type: "password", placeholder: "Paste your TypeSafe API key", required: true, secret: true, helperMd: "Content an agent submits for evaluation is sent to TypeSafe. Grant access only to agents whose task content may leave this instance." }],
@@ -205,7 +205,18 @@ const apps = [
     consoleLinks: { keys: "https://console.typesafe.ai/keys", docs: "https://docs.typesafe.ai/introduction/quickstart" },
     warnings: ["Content an agent submits for evaluation is sent to TypeSafe. Grant access only to agents whose task content may leave this instance."],
     riskTier: "S2",
-  }],
+  }, {
+    key: "ai-api_key", label: "Use Jev as the company Decision model", purpose: "ai", transport: "runtime_auth", auth: "api_key",
+    ai: { provider: "typesafe", method: "api_key" },
+    grantKinds: ["user", "organization"],
+    ownershipModes: ["customer"],
+    whenToUse: "Make Jev the company Decision model on your own TypeSafe key, instead of routing through OpenRouter.",
+    guidanceMd: "Use your personal TypeSafe key or an explicitly shared company key. Decision models call this key directly.",
+    consoleLinks: { keys: "https://console.typesafe.ai/keys", docs: "https://docs.typesafe.ai/introduction/quickstart" },
+    riskTier: "S2",
+    credentialFields: [{ key: "apiKey", label: "TypeSafe API key", type: "password", required: true, placeholder: "Paste your TypeSafe API key", secret: true }],
+    keyPlacement: { location: "env", name: "TYPESAFE_API_KEY" },
+  }]],
   [
     "zapier",
     "Zapier",

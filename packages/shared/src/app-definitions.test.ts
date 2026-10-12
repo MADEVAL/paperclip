@@ -1425,8 +1425,10 @@ describe("typesafe", () => {
     expect(app).toBeTruthy();
     expect(CONNECTABLE_APP_SLUGS).toContain("typesafe");
     expect(APP_STORE_DEFINITIONS.some((entry) => entry.slug === "typesafe")).toBe(true);
-    expect(app!.methods).toHaveLength(1);
-    const [method] = app!.methods;
+    expect(app!.methods).toHaveLength(2);
+    const method = app!.methods.find((entry) => entry.key === "api-key")!;
+    const aiMethod = app!.methods.find((entry) => entry.key === "ai-api_key")!;
+    expect(aiMethod).toMatchObject({ purpose: "ai", transport: "runtime_auth", auth: "api_key", ai: { provider: "typesafe", method: "api_key" } });
     expect(method).toMatchObject({
       key: "api-key",
       transport: "rest_api",
