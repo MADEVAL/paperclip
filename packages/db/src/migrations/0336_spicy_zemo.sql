@@ -1,0 +1,1 @@
+ALTER TABLE "companies" ADD COLUMN "agent_instructions_enabled" boolean DEFAULT false NOT NULL;

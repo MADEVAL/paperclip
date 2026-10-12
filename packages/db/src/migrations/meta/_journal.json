@@ -2325,6 +2325,27 @@
       "when": 1791781882729,
       "tag": "0333_normal_wild_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 334,
+      "version": "7",
+      "when": 1791664991605,
+      "tag": "0334_little_dragon_lord",
+      "breakpoints": true
+    },
+    {
+      "idx": 335,
+      "version": "7",
+      "when": 1791746347605,
+      "tag": "0335_regular_hedge_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 336,
+      "version": "7",
+      "when": 1791750128334,
+      "tag": "0336_spicy_zemo",
+      "breakpoints": true
     }
   ]
 }
