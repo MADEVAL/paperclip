@@ -50,6 +50,7 @@ const DIRECT_ADAPTER_TYPES = [
   "hermes_local",
   "kimi_local",
   "openclaw_gateway",
+  "opencode_gateway",
   "opencode_local",
   "pi_local",
   "process",

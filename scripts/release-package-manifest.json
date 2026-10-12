@@ -65,6 +65,11 @@
     "publishFromCi": true
   },
   {
+    "dir": "packages/adapters/opencode-gateway",
+    "name": "@paperclipai/adapter-opencode-gateway",
+    "publishFromCi": true
+  },
+  {
     "dir": "packages/shared",
     "name": "@paperclipai/shared",
     "publishFromCi": true

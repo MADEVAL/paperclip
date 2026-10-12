@@ -2,6 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { asBoolean } from "@paperclipai/adapter-utils/server-utils";
+import {
+  PAPERCLIP_WINDOWS_UTF8_PLUGIN_FILENAME,
+  PAPERCLIP_WINDOWS_UTF8_PLUGIN_SOURCE,
+} from "./windows-utf8.js";
 
 type PreparedOpenCodeRuntimeConfig = {
   env: Record<string, string>;
@@ -106,7 +110,12 @@ export async function prepareOpenCodeRuntimeConfig(input: {
   env: Record<string, string>;
   config: Record<string, unknown>;
   targetIsRemote?: boolean;
+  /** True when the resolved CLI is OpenCode 2.x (native `permissions` array). */
+  openCodeV2?: boolean;
+  /** Platform override for tests; defaults to the running platform. */
+  platform?: NodeJS.Platform;
 }): Promise<PreparedOpenCodeRuntimeConfig> {
+  const platform = input.platform ?? process.platform;
   const skipPermissions = asBoolean(input.config.dangerouslySkipPermissions, true);
   if (!skipPermissions) {
     return {
@@ -204,8 +213,24 @@ export async function prepareOpenCodeRuntimeConfig(input: {
 
   const nextConfig: Record<string, unknown> = {
     ...existingConfig,
-    permission: "allow",
   };
+  if (input.openCodeV2) {
+    // OpenCode 2.x uses one ordered `permissions` array and gives it precedence
+    // over the V1 `permission` key, while 1.x rejects `permissions` outright.
+    // Pick exactly one shape: allow every action, and keep external-directory
+    // access because the agent instructions and file-sync trees live outside
+    // the workspace and would otherwise resolve to an unattended `ask`.
+    delete nextConfig.permission;
+    nextConfig.permissions = [
+      { action: "*", resource: "*", effect: "allow" },
+      { action: "external_directory", resource: "*", effect: "allow" },
+    ];
+    notes.push(
+      "Injected runtime OpenCode V2 permissions allowing all actions and external-directory access.",
+    );
+  } else {
+    nextConfig.permission = "allow";
+  }
   if (Object.keys(nextProvider).length > 0) {
     nextConfig.provider = nextProvider;
   }
@@ -221,6 +246,27 @@ export async function prepareOpenCodeRuntimeConfig(input: {
     nextConfig.small_model = smallModel;
     notes.push(`Pinned OpenCode small_model to ${smallModel}.`);
   }
+  // Windows PowerShell 5.1 (OpenCode's default shell host on Windows) corrupts
+  // non-ASCII text: it writes child output in the legacy OEM code page and
+  // initializes `$OutputEncoding` to US-ASCII. Inject a plugin that forces UTF-8
+  // on every shell command. Only the V1 config shape carries this plugin format.
+  // Remote targets are already excluded above.
+  if (platform === "win32" && !input.openCodeV2) {
+    const pluginPath = path.join(runtimeConfigDir, PAPERCLIP_WINDOWS_UTF8_PLUGIN_FILENAME);
+    await fs.writeFile(pluginPath, PAPERCLIP_WINDOWS_UTF8_PLUGIN_SOURCE, "utf8");
+    // A relative reference resolves against the config file and stays valid after
+    // the config directory is copied to a remote execution target, where an
+    // absolute host path would not exist.
+    const pluginRef = `./${PAPERCLIP_WINDOWS_UTF8_PLUGIN_FILENAME}`;
+    const existingPlugin = Array.isArray(nextConfig.plugin)
+      ? (nextConfig.plugin as unknown[]).filter((entry) => entry !== pluginRef)
+      : [];
+    nextConfig.plugin = [...existingPlugin, pluginRef];
+    notes.push(
+      "Injected the Windows UTF-8 shell plugin so agent shell output keeps non-ASCII text.",
+    );
+  }
+
   await fs.writeFile(runtimeConfigPath, `${JSON.stringify(nextConfig, null, 2)}\n`, "utf8");
 
   return {

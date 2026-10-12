@@ -70,4 +70,12 @@ export {
   requireOpenCodeModelId,
   resetOpenCodeModelsCacheForTests,
 } from "./models.js";
+export {
+  loadOpenCodeFreeModels,
+  mergeFreeModels,
+  isFreeOpenCodeModelId,
+  parseFreeModelCatalog,
+  resetOpenCodeFreeModelCacheForTests,
+  FALLBACK_OPENCODE_FREE_MODELS,
+} from "./free-models.js";
 export { parseOpenCodeJsonl, isOpenCodeUnknownSessionError } from "./parse.js";
