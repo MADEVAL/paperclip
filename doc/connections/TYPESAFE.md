@@ -152,6 +152,9 @@ connector integration suite.
 
 ## Where Paperclip can use Jev
 
+See [TYPESAFE-USE-CASES.md](./TYPESAFE-USE-CASES.md) for the full capability
+audit and brainstorm of concrete application sites. The short version:
+
 Jev is an evaluator, not a chat model: it turns a `state` plus typed questions
 into calibrated decisions. This connector therefore fits wherever a Paperclip
 step needs a structured judgement that code can branch on. It does not replace
