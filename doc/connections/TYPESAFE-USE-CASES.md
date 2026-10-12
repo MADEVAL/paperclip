@@ -188,17 +188,26 @@ side (the same shape as `personal`'s first-class DeepSeek provider), or keep the
 OpenRouter route for internal decisions and use this connector for agent-side
 decisions. The two are independent by design.
 
-## 5. Recommended roadmap
+## 5. Roadmap
 
-1. **Phase 1 — make it visible, zero new server surface.** Teach the built-in
-   `issue-triage` skill to use `typesafe_ask` when the connection is installed,
-   with confidence-gated escalation and a heuristic fallback. Highest value,
-   lowest risk, and it finally shows Jev doing work in a shipped flow.
-2. **Phase 2 — accept and plan gates.** Add the same optional Jev step to
-   `task-planning` and `qa-acceptance` (atomic fan-out over acceptance criteria).
-3. **Phase 3 — automatic decisions.** Add a `typesafe` decision provider to the
-   AI-connection layer and register the first background feature
-   (`issues.classify` for suggested priority/route on create).
+1. **Phase 1 — done.** The built-in `issue-triage` skill uses `typesafe_ask`
+   (one choice + noul + score request) with a `0.7` confidence gate, an
+   escalate-instead-of-guess rule and a heuristic fallback.
+2. **Phase 2 — done.** The same optional gate ships in `task-planning` and
+   `qa-acceptance` (atomic fan-out over acceptance criteria).
+3. **Purpose toggles — done.** A canonical list of named Jev purposes with
+   switches, on the connection Permissions page and in Company Settings. A
+   disabled purpose is refused server-side (403 `typesafe_purpose_disabled`) and
+   is no longer advertised to agents.
+4. **Phase 3 — next, larger.** A first-class `typesafe` **AI provider** so the
+   internal Decision models feature can call Jev direct, plus the first
+   background feature (`issues.classify`) that suggests a priority/route on
+   issue creation. This touches the whole AI-provider registry, routing,
+   provider defaults, secret handling, the decision-provider branch and the
+   provider setup UI — the same size as the DeepSeek first-class provider. A
+   leaner alternative is a small governed service that calls this connector's
+   API from a background feature, reusing the purpose gate instead of an AI
+   connection; decide before implementing.
 
 Optional hardening alongside Phase 1: a client-side request-size guard (fail fast
 under the 64k/32k budgets), and a cost event for decision spend if Costs should
