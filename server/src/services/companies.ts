@@ -119,6 +119,8 @@ export function companyService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
     defaultResponsibleUserId: companies.defaultResponsibleUserId,
     requireBoardApprovalForNewAgents: companies.requireBoardApprovalForNewAgents,
     interactionResolverGovernance: companies.interactionResolverGovernance,
+    agentInstructionsPrefix: companies.agentInstructionsPrefix,
+    agentInstructionsEnabled: companies.agentInstructionsEnabled,
     feedbackDataSharingEnabled: companies.feedbackDataSharingEnabled,
     feedbackDataSharingConsentAt: companies.feedbackDataSharingConsentAt,
     feedbackDataSharingConsentByUserId: companies.feedbackDataSharingConsentByUserId,

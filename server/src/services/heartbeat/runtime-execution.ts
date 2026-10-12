@@ -484,7 +484,7 @@ export async function executeHeartbeatRuntime(db: Db, input: HeartbeatRuntimeExe
     adapterFinalizeOutcome = status;
   };
 
-  const usageRecorder = await createRunUsageRecorder(db, { companyId: run.companyId, runId: run.id, adapterType: agent.adapterType });
+  const usageRecorder = await createRunUsageRecorder(db, { companyId: run.companyId, runId: run.id, adapterType: agent.adapterType, aiRouting: managedAiRuntime?.config.managedAiRouting });
   input.effects.onUsageCaptureReady(usageRecorder.persistFailure);
   let adapterResult: AdapterExecutionResult;
   const runGoalControlRequestId = readNonEmptyString(

@@ -36,6 +36,7 @@ export const AGENT_ADAPTER_TYPES = [
   "hermes_gateway",
   "hermes_local",
   "kimi_local",
+  "opencode_gateway",
   "opencode_local",
   "pi_local",
   "cursor",
@@ -76,6 +77,23 @@ export const AGENT_ROLE_LABELS: Record<AgentRole, string> = {
 
 export const AGENT_DEFAULT_MAX_CONCURRENT_RUNS = 20;
 export const WORKSPACE_BRANCH_ROUTINE_VARIABLE = "workspaceBranch";
+
+/**
+ * Built-in always-on output-style directive (CAVEMAN ULTRA).
+ *
+ * Prepended to every agent run when a company enables the agent instructions
+ * prefix but supplies no custom text. It is a standalone directive: it does NOT
+ * load or depend on the caveman skill. Safe to edit here; keep it short because
+ * it is sent on every model call.
+ */
+export const CAVEMAN_ULTRA_DIRECTIVE = [
+  "## Output style - CAVEMAN ULTRA",
+  "Compress every reply to the floor. Drop articles, copulas, connectives when order stays clear. Fragments. One word when one word is enough. Each fact once. No greeting, no recap, no hedging, no pleasantries.",
+  "Never cut or change: code, commands, paths, API names, exact error strings, not/never/no/only/except, numbers and units, the user's language. One term per thing. No invented abbreviations. No arrows.",
+  "Code change: changed lines plus 1-2 lines context, never the whole file. Existing comments untouched.",
+  "Plain full sentences, then resume, only for: security warning; irreversible action; step order a fragment could scramble; confused user; questions back to the user.",
+  "Never announce the style.",
+].join("\n");
 
 // Config keys owned by Paperclip/company state rather than one concrete adapter.
 // `paperclipSkillSync` is persisted in adapterConfig but must survive adapter swaps.

@@ -23,6 +23,14 @@ export const companies = pgTable(
       .$type<InteractionResolverGovernance>()
       .notNull()
       .default({}),
+    // Company-wide directive prepended to every agent run's task context (see
+    // Company Settings). Null means none.
+    agentInstructionsPrefix: text("agent_instructions_prefix"),
+    // When true and no custom prefix is set, the built-in CAVEMAN ULTRA
+    // directive is used. Off by default.
+    agentInstructionsEnabled: boolean("agent_instructions_enabled")
+      .notNull()
+      .default(false),
     feedbackDataSharingEnabled: boolean("feedback_data_sharing_enabled")
       .notNull()
       .default(false),

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { catalogManifest, catalogSkills, resolveCatalogSkillRef } from "./index.js";
 
 const EXPECTED_BUNDLED_KEYS = [
+  "paperclipai/bundled/content/caveman",
   "paperclipai/bundled/docs/doc-maintenance",
   "paperclipai/bundled/paperclip-operations/issue-triage",
   "paperclipai/bundled/paperclip-operations/reflection-coach",

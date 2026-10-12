@@ -337,6 +337,7 @@ import {
 } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  CAVEMAN_ULTRA_DIRECTIVE,
   CHAT_PROVIDERS,
   ISSUE_DISPOSITION_REPAIR_RETRY_REASON,
   isEnvironmentDriverSupportedForAdapter,
@@ -346,6 +347,7 @@ import {
   agentConfigRevisions,
   agentWakeupRequests,
   chatActions,
+  companies,
   heartbeatRuns,
   environmentLeases,
   issueComments,
@@ -2909,17 +2911,45 @@ export function heartbeatService(
         taskPlan,
         includeWakeComments: false,
       }) + chatCompletionInstruction(context);
-      const taskMarkdownCompact = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
+      let taskMarkdownCompact = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
         includeDescription: false,
       }) + chatCompletionInstruction(context);
-      const taskMarkdownAssignmentCompact = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
+      let taskMarkdownAssignmentCompact = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
         includeDescription: false,
         includeWakeComments: false,
       }) + chatCompletionInstruction(context);
+      // Company-wide directive (Company Settings -> Agent instructions prefix),
+      // prepended to every task-context variant so it reaches every adapter
+      // (local, gateway, native runner) on fresh and resumed wakes alike.
+      // PAPERCLIP_AGENT_INSTRUCTIONS_PREFIX is an operator fallback when the
+      // company setting is unset.
+      const companyInstructionRow = await db
+        .select({
+          prefix: companies.agentInstructionsPrefix,
+          enabled: companies.agentInstructionsEnabled,
+        })
+        .from(companies)
+        .where(eq(companies.id, agent.companyId))
+        .then((rows) => rows[0] ?? null);
+      const customInstructionsPrefix = companyInstructionRow?.prefix?.trim() ?? "";
+      const effectiveInstructionsPrefix = customInstructionsPrefix
+        ? customInstructionsPrefix
+        : companyInstructionRow?.enabled
+          ? CAVEMAN_ULTRA_DIRECTIVE
+          : process.env.PAPERCLIP_AGENT_INSTRUCTIONS_PREFIX;
+      const agentInstructionsPrefix = readAgentInstructionsPrefix(
+        effectiveInstructionsPrefix,
+      );
+      if (agentInstructionsPrefix) {
+        taskMarkdown = agentInstructionsPrefix + taskMarkdown;
+        taskMarkdownAssignment = agentInstructionsPrefix + taskMarkdownAssignment;
+        taskMarkdownCompact = agentInstructionsPrefix + taskMarkdownCompact;
+        taskMarkdownAssignmentCompact = agentInstructionsPrefix + taskMarkdownAssignmentCompact;
+      }
       if (issueRef) {
         context.paperclipIssue = {
           id: issueRef.id,
@@ -5311,4 +5341,21 @@ export function heartbeatService(
 
     getActiveRunIssueSummaryForAgent,
   };
+}
+
+/**
+ * Company/instance-wide directive prepended to every run's task context.
+ *
+ * The value comes from Company Settings (`companies.agent_instructions_prefix`);
+ * `PAPERCLIP_AGENT_INSTRUCTIONS_PREFIX` is an operator fallback. This is the
+ * "always-on" seam: the text reaches every adapter (local, gateway, native
+ * runner) and both fresh and resumed wakes, unlike a skill, which the model only
+ * loads on demand. The trailing blank line is included so the directive renders
+ * as its own block ahead of the task brief.
+ */
+export function readAgentInstructionsPrefix(
+  value: string | undefined = process.env.PAPERCLIP_AGENT_INSTRUCTIONS_PREFIX,
+): string {
+  const trimmed = (value ?? "").trim();
+  return trimmed ? `${trimmed}\n\n` : "";
 }

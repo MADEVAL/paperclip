@@ -2,6 +2,8 @@
 
 Guidance for human and AI contributors working in this repository.
 
+CAVEMAN ALWAYS ON. All responses caveman ultra: no preamble, no explanation. Load `caveman` skill in `ultra` mode every interaction.
+
 ## 1. Purpose
 
 Paperclip is a control plane for AI-agent companies.

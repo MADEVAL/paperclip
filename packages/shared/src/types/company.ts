@@ -28,6 +28,13 @@ export interface Company {
   defaultResponsibleUserId: string | null;
   requireBoardApprovalForNewAgents: boolean;
   interactionResolverGovernance: InteractionResolverGovernance;
+  /**
+   * Company-wide directive prepended to every agent run's task context. Null
+   * means none. Editable from Company Settings.
+   */
+  agentInstructionsPrefix?: string | null;
+  /** When true and no prefix is set, use the built-in CAVEMAN ULTRA directive. */
+  agentInstructionsEnabled?: boolean;
   feedbackDataSharingEnabled: boolean;
   feedbackDataSharingConsentAt: Date | null;
   feedbackDataSharingConsentByUserId: string | null;

@@ -54,6 +54,8 @@ export function CompanySettings() {
   const [logoUrl, setLogoUrl] = useState("");
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
   const [governance, setGovernance] = useState<InteractionResolverGovernance>({});
+  const [agentInstructionsPrefix, setAgentInstructionsPrefix] = useState("");
+  const [agentInstructionsEnabled, setAgentInstructionsEnabled] = useState(false);
 
   // Sync local state from selected company
   useEffect(() => {
@@ -62,6 +64,8 @@ export function CompanySettings() {
     setDescription(selectedCompany.description ?? "");
     setLogoUrl(selectedCompany.logoUrl ?? "");
     setGovernance(selectedCompany.interactionResolverGovernance ?? {});
+    setAgentInstructionsPrefix(selectedCompany.agentInstructionsPrefix ?? "");
+    setAgentInstructionsEnabled(Boolean(selectedCompany.agentInstructionsEnabled));
   }, [selectedCompany]);
 
   const generalDirty =
@@ -87,6 +91,17 @@ export function CompanySettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
     }
+  });
+
+  const instructionsMutation = useMutation({
+    mutationFn: (input: { prefix: string; enabled: boolean }) =>
+      companiesApi.update(selectedCompanyId!, {
+        agentInstructionsPrefix: input.prefix.trim() ? input.prefix : null,
+        agentInstructionsEnabled: input.enabled,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+    },
   });
 
   const governanceMutation = useMutation({
@@ -340,6 +355,60 @@ export function CompanySettings() {
           )}
         </div>
       )}
+
+      {/* Agent instructions prefix */}
+      <div
+        className="max-w-2xl space-y-4"
+        data-testid="company-settings-agent-prefix-section"
+      >
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Agent instructions
+        </div>
+        <ToggleField
+          label="Caveman ULTRA output style"
+          hint="On: every agent answers in the built-in caveman-ultra style. Off: no injection. A custom prefix below overrides the built-in style."
+          checked={agentInstructionsEnabled}
+          onChange={setAgentInstructionsEnabled}
+          toggleTestId="company-settings-agent-prefix-toggle"
+        />
+        <Field
+          label="Company-wide prompt prefix"
+          hint="Text prepended to every agent run, before the task brief, for every agent in this company. Use it for a house output style (for example a caveman directive). Leave empty for none."
+        >
+          <textarea
+            className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+            rows={7}
+            value={agentInstructionsPrefix}
+            placeholder={"## House style\nRespond terse. Keep every technical fact. Drop only fluff. Code, commands, paths, and error strings stay verbatim."}
+            onChange={(e) => setAgentInstructionsPrefix(e.target.value)}
+            data-testid="company-settings-agent-prefix-input"
+          />
+        </Field>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() =>
+              instructionsMutation.mutate({
+                prefix: agentInstructionsPrefix,
+                enabled: agentInstructionsEnabled,
+              })
+            }
+            disabled={instructionsMutation.isPending}
+          >
+            {instructionsMutation.isPending ? "Saving..." : "Save"}
+          </Button>
+          {instructionsMutation.isSuccess && (
+            <span className="text-xs text-muted-foreground">Saved</span>
+          )}
+          {instructionsMutation.isError && (
+            <span className="text-xs text-destructive">
+              {instructionsMutation.error instanceof Error
+                ? instructionsMutation.error.message
+                : "Failed to save"}
+            </span>
+          )}
+        </div>
+      </div>
 
       {/* Hiring */}
       <div className="max-w-2xl space-y-4" data-testid="company-settings-team-section">
