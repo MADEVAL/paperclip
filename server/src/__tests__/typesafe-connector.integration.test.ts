@@ -475,4 +475,36 @@ describeEmbeddedPostgres("TypeSafe connector", () => {
     expect(markdown).toContain(secondConnectionId);
     expect(markdown).not.toContain(KEY);
   });
+
+  it("refuses a purpose the operator switched off and allows an enabled one", async () => {
+    const { companyId, first } = await fixture("all_agents");
+    const fetcher = provider();
+    await expect(
+      executeTypesafeAsk(
+        db,
+        binding(companyId, first.id),
+        ask({ purpose: "guardrails" }),
+        fetcher as unknown as typeof fetch,
+      ),
+    ).rejects.toMatchObject({ status: 403, details: { code: "typesafe_purpose_disabled" } });
+    expect(fetcher).not.toHaveBeenCalled();
+
+    await expect(
+      executeTypesafeAsk(
+        db,
+        binding(companyId, first.id),
+        ask({ purpose: "issue_triage" }),
+        fetcher as unknown as typeof fetch,
+      ),
+    ).resolves.toEqual(ANSWER);
+    expect(evaluateCalls(fetcher)).toHaveLength(1);
+  });
+
+  it("advertises the enabled purposes in the assigned resource context", async () => {
+    const { companyId, first } = await fixture("first_agent");
+    const assignments = await resolveConnectorAssignments(db, { companyId, agentId: first.id });
+    expect(assignments[0]!.resources[0]!.metadata).toMatchObject({
+      purposes: ["issue_triage", "task_planning", "qa_acceptance"],
+    });
+  });
 });

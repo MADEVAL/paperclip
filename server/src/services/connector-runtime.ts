@@ -25,6 +25,7 @@ import {
   assignedTypesafeConnections,
   executeTypesafeAsk,
 } from "./connectors/typesafe.js";
+import { enabledTypesafePurposes } from "@paperclipai/shared";
 import { materializeAsset } from "./native-runtime/runtime-context.js";
 import { BROWSER_USE_CLOUD_SKILL } from "./connectors/browser-use-cloud/skill.js";
 
@@ -126,6 +127,9 @@ const connectors: ConnectorDefinition[] = [
           id: connection.id,
           label: connection.name,
           connectionId: connection.id,
+          metadata: {
+            purposes: enabledTypesafePurposes(connection.config.methodConfig),
+          },
         }),
       );
     },

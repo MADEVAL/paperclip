@@ -71,6 +71,12 @@ injected Paperclip API URL and bearer key, and the `X-Paperclip-Run-Id` header.
   first.
 - `model`: optional. It overrides the connection's model, for example
   `jev-preview`.
+- `purpose`: optional. The Paperclip purpose this call serves
+  (`issue_triage`, `task_planning`, `qa_acceptance`, `priority`,
+  `inbox_gardening`, `guardrails`). Omit it for an ad-hoc question. A purpose the
+  connection's operator switched off is refused with 403
+  `typesafe_purpose_disabled`, so the connection's allowed purposes appear under
+  "Assigned resources" below.
 - `connectionId`: required only when more than one TypeSafe connection is listed
   under "Assigned resources" below.
 

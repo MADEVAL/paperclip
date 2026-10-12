@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { typesafeAskSchema } from "./typesafe.js";
+import {
+  enabledTypesafePurposes,
+  isTypesafePurposeAllowed,
+  TYPESAFE_PURPOSE_IDS,
+  typesafeAskSchema,
+} from "./typesafe.js";
 
 const ask = (questions: unknown) => ({ state: "text", questions });
 
@@ -56,5 +61,18 @@ describe("typesafeAskSchema", () => {
     expect(
       typesafeAskSchema.safeParse({ ...ask({ q: { type: "noul", instructions: "?" } }), apiKey: "x" }).success,
     ).toBe(false);
+  });
+
+  it("accepts a known purpose and rejects an unknown one", () => {
+    expect(typesafeAskSchema.safeParse({ ...ask({ q: { type: "noul", instructions: "?" } }), purpose: "issue_triage" }).success).toBe(true);
+    expect(typesafeAskSchema.safeParse({ ...ask({ q: { type: "noul", instructions: "?" } }), purpose: "freestyle" }).success).toBe(false);
+  });
+
+  it("reads enabled purposes from a connection's methodConfig", () => {
+    expect(TYPESAFE_PURPOSE_IDS).toContain("issue_triage");
+    expect(enabledTypesafePurposes({ purposeIssueTriage: true, purposePriority: false })).toEqual(["issue_triage"]);
+    expect(isTypesafePurposeAllowed({ purposeIssueTriage: true }, "issue_triage")).toBe(true);
+    expect(isTypesafePurposeAllowed({ purposeIssueTriage: false }, "issue_triage")).toBe(false);
+    expect(isTypesafePurposeAllowed(undefined, undefined)).toBe(true);
   });
 });

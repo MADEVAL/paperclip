@@ -104,6 +104,7 @@ Ask about one plan in one call:
 ```json
 {
   "state": { "change": "<change summary>", "acceptance": ["<criterion 1>", "<criterion 2>"] },
+  "purpose": "qa_acceptance",
   "questions": {
     "coverage": {
       "type": "score",

@@ -1436,9 +1436,18 @@ describe("typesafe", () => {
     });
     expect(method.provider).toBeUndefined();
     expect(method.credentialFields?.map((field) => field.key)).toEqual(["apiKey"]);
-    expect(method.extensionFields).toEqual([
-      expect.objectContaining({ key: "model", defaultValue: "jev-latest", advanced: true }),
+    const fields = method.extensionFields ?? [];
+    expect(fields[0]).toMatchObject({ key: "model", defaultValue: "jev-latest", advanced: true });
+    const purposes = fields.slice(1);
+    expect(purposes.map((field) => field.key)).toEqual([
+      "purposeIssueTriage",
+      "purposeTaskPlanning",
+      "purposeQaAcceptance",
+      "purposePriority",
+      "purposeInboxGardening",
+      "purposeGuardrails",
     ]);
+    expect(purposes.every((field) => field.type === "checkbox" && typeof field.defaultValue === "boolean")).toBe(true);
     expect(method.consoleLinks).toMatchObject({
       keys: "https://console.typesafe.ai/keys",
       docs: "https://docs.typesafe.ai/introduction/quickstart",

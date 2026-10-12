@@ -1,6 +1,7 @@
 import { AiConnectionPoolConnector } from "@/components/ai-connections/AiConnectionPoolConnector";
 import { aiConnectionRouterPluginKey } from "@paperclipai/shared";
 import { ConnectionInstructionsSettings } from "@/features/connections/ConnectionInstructions";
+import { TypesafePurposesSettings, isTypesafeConnection } from "@/features/connections/TypesafePurposes";
 import { HonchoWorkspaceSettings } from "@/features/connections/HonchoWorkspaceSettings";
 import { BrowserUseSettingsPanel } from "./app-detail/BrowserUseSettingsPanel";
 import { isRetiredComposioConnection, RETIRED_COMPOSIO_MESSAGE, isRemoteMcpConnectorId, isRemoteMcpConnectorMethod } from "@paperclipai/shared";
@@ -686,7 +687,7 @@ function StandardAppDetail({ renderActions, renderAgentSettings, renderConnectio
               </p> : null}
               {connection.config?.sourceTemplateKey !== "composio" && isRemoteMcpConnectorMethod(connection.config?.sourceTemplateKey, connection.config?.connectionMethodKey) && <p className="text-sm text-muted-foreground">Paperclip controls access to the tools listed here. App and action permissions inside these tools are managed in {baseAppName}.</p>}
               <PermissionsPanel
-                afterAgentAccess={<>{logoEntry?.agentInstructions && <ConnectionInstructionsSettings key={connection.id} connection={connection} provider={logoEntry.name} template={logoEntry.agentInstructions} canConfigure={grantsQuery.data?.capabilities?.canConfigure ?? false} />}{renderAgentSettings?.(connection)}</>}
+                afterAgentAccess={<>{logoEntry?.agentInstructions && <ConnectionInstructionsSettings key={connection.id} connection={connection} provider={logoEntry.name} template={logoEntry.agentInstructions} canConfigure={grantsQuery.data?.capabilities?.canConfigure ?? false} />}{isTypesafeConnection(connection) && <TypesafePurposesSettings key={`purposes-${connection.id}`} connection={connection} canConfigure={grantsQuery.data?.capabilities?.canConfigure ?? false} />}{renderAgentSettings?.(connection)}</>}
                 actions={actionsContent}
                 connectionId={connectionId}
                 capabilities={grantsQuery.data?.capabilities}

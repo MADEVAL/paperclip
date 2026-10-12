@@ -1,7 +1,7 @@
 import { and, eq, inArray, or } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { toolConnectionInstalls, toolConnections } from "@paperclipai/db";
-import { typesafeAskSchema, type TypesafeAskResult } from "@paperclipai/shared";
+import { isTypesafePurposeAllowed, typesafeAskSchema, TYPESAFE_PURPOSE_IDS, type TypesafeAskResult } from "@paperclipai/shared";
 import { HttpError, badRequest, forbidden, unprocessable } from "../../errors.js";
 import { logActivity } from "../activity-log.js";
 import { secretService } from "../secrets.js";
@@ -53,6 +53,12 @@ export const TYPESAFE_TOOLS = [
           type: "string",
           description:
             "Required only when more than one TypeSafe connection is assigned.",
+        },
+        purpose: {
+          type: "string",
+          enum: [...TYPESAFE_PURPOSE_IDS],
+          description:
+            "The Paperclip purpose this call serves, for example issue_triage. Omit for an ad-hoc question. A purpose the connection's operator switched off is refused.",
         },
       },
       required: ["state", "questions"],
@@ -133,6 +139,12 @@ export async function executeTypesafeAsk(
     : connections[0];
   if (!connection)
     throw forbidden("That TypeSafe connection is not assigned to this agent");
+
+  if (!isTypesafePurposeAllowed(connection.config.methodConfig, input.purpose))
+    throw forbidden("This TypeSafe connection is not enabled for that purpose", {
+      code: "typesafe_purpose_disabled",
+      purpose: input.purpose,
+    });
 
   const methodConfig = connection.config.methodConfig;
   const configured =

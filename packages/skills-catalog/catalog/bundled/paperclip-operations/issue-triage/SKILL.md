@@ -61,6 +61,7 @@ Ask every question about one `state` in a single request:
 ```json
 {
   "state": { "issue": "<heartbeat-context>", "signals": "<staleness, blockers, participants>" },
+  "purpose": "issue_triage",
   "questions": {
     "verdict": {
       "type": "choice",

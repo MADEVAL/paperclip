@@ -47,6 +47,54 @@
           "placeholder": "jev-latest",
           "defaultValue": "jev-latest",
           "advanced": true
+        },
+        {
+          "key": "purposeIssueTriage",
+          "label": "Issue triage",
+          "type": "checkbox",
+          "defaultValue": true,
+          "advanced": true,
+          "helperMd": "Classify an issue's next action (resume, reassign, unblock, escalate, close)."
+        },
+        {
+          "key": "purposeTaskPlanning",
+          "label": "Plan review",
+          "type": "checkbox",
+          "defaultValue": true,
+          "advanced": true,
+          "helperMd": "Check a plan states a clear outcome and how to verify it before execution."
+        },
+        {
+          "key": "purposeQaAcceptance",
+          "label": "Acceptance checks",
+          "type": "checkbox",
+          "defaultValue": true,
+          "advanced": true,
+          "helperMd": "Score acceptance-criteria coverage and per-criterion pass/fail."
+        },
+        {
+          "key": "purposePriority",
+          "label": "Priority and severity",
+          "type": "checkbox",
+          "defaultValue": false,
+          "advanced": true,
+          "helperMd": "Score severity and impact to suggest an issue priority."
+        },
+        {
+          "key": "purposeInboxGardening",
+          "label": "Inbox gardening",
+          "type": "checkbox",
+          "defaultValue": false,
+          "advanced": true,
+          "helperMd": "Decide which inbox items are safe to archive."
+        },
+        {
+          "key": "purposeGuardrails",
+          "label": "Outbound guardrails",
+          "type": "checkbox",
+          "defaultValue": false,
+          "advanced": true,
+          "helperMd": "Screen outbound messages for leaked content or policy risk."
         }
       ],
       "guidanceMd": "Create an API key in your TypeSafe account and paste it here. Agents you select can then ask Jev questions about text or data from their tasks.",

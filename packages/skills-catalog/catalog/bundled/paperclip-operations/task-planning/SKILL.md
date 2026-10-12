@@ -47,6 +47,7 @@ Ask every question about the plan in one call:
 ```json
 {
   "state": { "goal": "<issue goal>", "plan": "<latest plan revision>" },
+  "purpose": "task_planning",
   "questions": {
     "verifiable": {
       "type": "noul",
