@@ -382,8 +382,9 @@ Foundation (rollout steps 1–3 and 5) is implemented:
   `qa.acceptance` are registered. `issues.dedupe` escalates a confident duplicate
   instead of mutating a task (no safe duplicate-link primitive exists yet);
   `issues.triage` triages a task the recovery sweep already blocked (idempotent
-  per task for a day); `plans.gate` runs in the accept route before the
-  resolution transaction and holds execution when the plan is not ready;
+  per task for a day); `plans.gate` runs before the resolution transaction on
+  every accept path (board route and agent conversation reply) and holds
+  execution when the plan is not ready;
   `qa.acceptance` blocks an agent's self-review completion when acceptance
   criteria are not met (never a human's approval). Because `issues.triage` runs as
   a system actor from the sweep, its catalog entry is `background: true`

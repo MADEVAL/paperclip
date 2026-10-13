@@ -95,10 +95,11 @@ other verdict becomes a board question. It is idempotent per task for a day, so 
 is company-sponsored (`background`), which is why the shared catalog marks it
 `background: true` rather than the "agent/human" mode in the original spec draft.
 
-`plans.gate` runs in the interaction-accept route *before* the resolution
-transaction, so the provider call never runs while rows are locked. A `gate`
-verdict accepts the plan but suppresses the execution start and turns the missing
-detail into a board question; an unavailable model is fail-open (`proceed`).
+`plans.gate` runs before the resolution transaction on every accept path: the
+board `POST /issues/:id/interactions/:id/accept` route and the agent
+conversation-reply accept (`resolveConfirmationFromComment`). A `gate` verdict
+accepts the plan but suppresses the execution start and turns the missing detail
+into a board question; an unavailable model is fail-open (`proceed`).
 
 `qa.acceptance` gates only an **agent**-origin approval comment, so a human's
 explicit approval is never overridden. A `fail` verdict leaves the task in review

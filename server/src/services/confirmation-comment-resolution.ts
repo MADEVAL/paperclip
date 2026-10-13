@@ -4,6 +4,7 @@ import { resolveConfirmationFromCommentSchema, type ResolveConfirmationFromComme
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { persistActivity, publishActivity, type ActivityPublication } from "./activity-log.js";
+import { escalateDecision, gatePlan, plansGate } from "./decision-features.js";
 import { assertIssueThreadInteractionResolverAudience } from "./issue-thread-interaction-resolution.js";
 import { issueThreadInteractionService } from "./issue-thread-interactions.js";
 
@@ -25,6 +26,23 @@ export async function resolveConfirmationFromComment(db: Db, args: {
   const input = resolveConfirmationFromCommentSchema.parse(args.input);
   let publication: ActivityPublication | null = null;
   const commitEffects: Array<(committedDb: Db) => Promise<void>> = [];
+  // A plan gate runs before the resolution transaction so the provider call never
+  // runs while issue/interaction rows are locked. Fail-open: an unavailable
+  // decision model returns `proceed` and changes nothing. Covers the agent
+  // conversation-reply accept, which the HTTP route does not.
+  const [preCard] = await db.select().from(issueThreadInteractions).where(and(
+    eq(issueThreadInteractions.id, args.interactionId),
+    eq(issueThreadInteractions.companyId, args.companyId),
+    eq(issueThreadInteractions.issueId, args.issueId),
+  ));
+  const preTarget = preCard?.payload && typeof preCard.payload === "object"
+    ? (preCard.payload as { target?: { type?: unknown; key?: unknown } }).target
+    : null;
+  const isPlanTarget = preCard?.kind === "request_confirmation" && preTarget?.type === "issue_document" && preTarget?.key === "plan";
+  const planGate = input.decision === "accept" && isPlanTarget
+    ? await gatePlan(db, { companyId: args.companyId, issueId: args.issueId,
+        actor: { type: "agent", agentId: args.actor.agentId, runId: args.actor.runId, companyId: args.companyId, source: "agent_jwt" } }).catch(() => null)
+    : null;
   const result = await db.transaction(async (transaction) => {
     const tx = transaction as unknown as Db;
     // Match task mutation/Stop/reset lock ordering, including replay checks.
@@ -114,7 +132,10 @@ export async function resolveConfirmationFromComment(db: Db, args: {
 
     // These service methods recheck resolver audience, company review policy,
     // target revision, selection bounds and issue lifecycle under the same lock.
-    const mutationOptions = { deferConfirmationCommitEffects: (effect: (committedDb: Db) => Promise<void>) => { commitEffects.push(effect); } };
+    const mutationOptions = {
+      deferConfirmationCommitEffects: (effect: (committedDb: Db) => Promise<void>) => { commitEffects.push(effect); },
+      ...(planGate?.status === "gate" ? { suppressPlanExecutionStart: true } : {}),
+    };
     const interaction = input.decision === "accept"
       ? (await svc.acceptInteraction(issue, card.id, { selectedOptionIds: selected }, args.actor, mutationOptions)).interaction
       : await svc.rejectInteraction(issue, card.id, { reason: input.reason }, args.actor, mutationOptions);
@@ -135,5 +156,21 @@ export async function resolveConfirmationFromComment(db: Db, args: {
   });
   if (publication) publishActivity(publication);
   for (const effect of commitEffects) await effect(db);
+  if (planGate?.status === "gate") {
+    // Accepted, but held back from execution: surface the missing detail to the
+    // board. Best-effort; it never affects the resolution result.
+    void escalateDecision(db, {
+      companyId: args.companyId, featureId: plansGate.id, invocationId: planGate.invocationId,
+      title: `Plan held back: ${args.issueId}`,
+      question: `The plan was accepted from a conversation reply but was not ready to execute (${planGate.choice}). What should happen?`,
+      summary: "A background plan gate ran when the plan was accepted. The plan was accepted but execution did not start.",
+      options: [
+        { id: "revise", label: "Revise the plan and re-confirm" },
+        { id: "run-anyway", label: "Execute it as-is" },
+        { id: "discard", label: "Discard the plan" },
+      ],
+      issueId: args.issueId, idempotencyKey: `plan-gate:${args.interactionId}`,
+    }).catch(() => {});
+  }
   return result;
 }
