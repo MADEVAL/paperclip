@@ -6,6 +6,7 @@ import { canManageAiConnections } from "./ai-connections.js";
 import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { decisionModelService, settingsDecisionTest } from "../services/decision-models.js";
+import { decisionFeatureStatuses } from "../services/decision-features.js";
 import { heartbeatService } from "../services/heartbeat.js";
 import { parseCostDateRange, parseCostLimit } from "./costs.js";
 
@@ -16,8 +17,10 @@ export function decisionModelRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId); assertBoard(req);
     const canManage = await canManageAiConnections(db, req, companyId);
-    if (!canManage) { res.json({ canManage, settings: null, choices: [] }); return; }
-    res.json({ canManage, settings: await service.settings(companyId), choices: await service.choices(companyId, getActorInfo(req).actorId) });
+    if (!canManage) { res.json({ canManage, settings: null, choices: [], features: [] }); return; }
+    const settings = await service.settings(companyId);
+    res.json({ canManage, settings, choices: await service.choices(companyId, getActorInfo(req).actorId),
+      features: decisionFeatureStatuses(settings.purposes) });
   });
   router.put("/companies/:companyId/decision-model", validate(updateDecisionModelSchema), async (req, res) => {
     const companyId = req.params.companyId as string;

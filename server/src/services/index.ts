@@ -219,4 +219,8 @@ export {
 } from "./remote-agent-profiles.js";
 
 export { decisionModelService, defineDecisionFeature } from "./decision-models.js";
-export { issuesClassify, suggestIssuePriority, DECISION_FEATURES } from "./decision-features.js";
+export {
+  issuesClassify, issuesDedupe, issuesTriage, plansGate, qaAcceptance, suggestIssuePriority, suggestDuplicateIssue, triageIssue, triageEscalatedIssues, escalateDecision, gatePlan, checkAcceptance,
+  decisionGuidance, resolveDecisionGuidance, decisionFeatureStatuses, answerConfidence, DECISION_FEATURES,
+  type DecisionEscalationInput, type DecisionEscalationResult, type PlanGateResult, type AcceptanceResult,
+} from "./decision-features.js";

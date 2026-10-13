@@ -224,6 +224,7 @@ import { buildPaperclipTaskMarkdown } from "./heartbeat/task-markdown.js";
 export { buildPaperclipTaskMarkdown } from "./heartbeat/task-markdown.js";
 
 import { decisionModelService } from "./decision-models.js";
+import { resolveDecisionGuidance, triageEscalatedIssues } from "./decision-features.js";
 import { TASK_QUESTION_GUIDANCE } from "./issue-question-context.js";
 import { createAgentIdentityRedactor } from "./agent-identity-redaction.js";
 import { agentIdentityService, supportsManagedAgentIdentity } from "./agent-identity.js";
@@ -1755,9 +1756,13 @@ export function heartbeatService(
   }
 
   async function reconcileStrandedAssignedIssues() {
-    return recovery.reconcileStrandedAssignedIssues({
+    const result = await recovery.reconcileStrandedAssignedIssues({
       issueCreatedAtGte: await getWorktreeExecutionCutoff(),
     });
+    // Best-effort triage of the tasks this sweep escalated to the board. It never
+    // blocks the sweep, is bounded, and is idempotent per task for a day.
+    void triageEscalatedIssues(db, result.issueIds).catch(() => {});
+    return result;
   }
 
   async function sweepStaleIssueLocks() {
@@ -2905,18 +2910,22 @@ export function heartbeatService(
       // Unlike the frozen initial communication preferences, live-call context
       // must also reach resumed turns. Rebuild it from server records each wake.
       const liveVoiceTaskPrefix = liveVoiceGuidance ? `${liveVoiceGuidance}\n\n` : "";
-      let taskMarkdown = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan }) + chatCompletionInstruction(context);
-      let taskMarkdownAssignment = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
+      // Gated on the company decision model: a company with no enabled decision
+      // model pays one small read and sees no dead instruction.
+      const decisionGuidanceText = await resolveDecisionGuidance(db, agent.companyId).catch(() => null);
+      const decisionPrefix = decisionGuidanceText ? `${decisionGuidanceText}\n\n` : "";
+      let taskMarkdown = decisionPrefix + liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan }) + chatCompletionInstruction(context);
+      let taskMarkdownAssignment = decisionPrefix + liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
         includeWakeComments: false,
       }) + chatCompletionInstruction(context);
-      let taskMarkdownCompact = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
+      let taskMarkdownCompact = decisionPrefix + liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
         includeDescription: false,
       }) + chatCompletionInstruction(context);
-      let taskMarkdownAssignmentCompact = liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
+      let taskMarkdownAssignmentCompact = decisionPrefix + liveVoiceTaskPrefix + buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
         includeDescription: false,

@@ -197,6 +197,12 @@ Because the tool is available to any agent in any task and any run, these are
 reachable today through normal agent prompts and skills. No new Paperclip
 feature is required to use them.
 
+The server can also ask the same judgements automatically without an agent run.
+The company **Decision model** features share the connector's purpose ids, so one
+switch governs both paths. When a server-side feature cannot act with confidence,
+it escalates into the left-menu **Decisions → Questions** queue instead of
+guessing; see `doc/decision-models.md` for the catalog and escalation loop.
+
 ### What this connector does not wire up
 
 - It is **independent** of the internal **Decision models** feature, but that feature can now also call Jev **direct**. On this branch `DECISION_MODELS.typesafe` (`jev-latest`) is a first-class decision provider (`server/src/services/decision-model-provider.ts`); the setup dialog adds it as a shared TypeSafe AI connection, and its purposes are company-level switches. The connector stays a parallel, agent-facing path with its own per-connection purposes: an operator can use direct Jev for background decisions while agents use the connector, OpenRouter (`typesafe/jev-1.13`) for decisions, or any combination.

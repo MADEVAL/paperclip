@@ -30,7 +30,7 @@ const result = await service.decide(context, {
 });
 ```
 
-The setup test is the only product caller in this release. Future callers must supply the existing budget enforcement hooks, handle unavailable/failure outcomes, and select their own thresholds. Boolean answers are probabilities, choice answers select a category, and scores use the ordered criteria's zero-based positions. Available distributions and provider confidence are preserved in returned answers. `succeeded` and `failed` results include an invocation ID and usage with reported, estimated, or unknown cost. Refusals and invalid responses never become invented answers.
+The setup test plus the registered features (`issues.classify`, `issues.dedupe`) are the product callers in this release. Every caller must supply the existing budget enforcement hooks, handle unavailable/failure outcomes, and select its own thresholds. Boolean answers are probabilities, choice answers select a category, and scores use the ordered criteria's zero-based positions. Available distributions and provider confidence are preserved in returned answers. `succeeded` and `failed` results include an invocation ID and usage with reported, estimated, or unknown cost. Refusals and invalid responses never become invented answers.
 
 `availability` reads local configuration and permissions only. It does not decrypt credentials, contact a provider, or promise reachability/budget admission. `availabilityForRequest()` returns a memoizing function; keep that function and its context object within one request. Dispatch never trusts this cached authorization.
 
@@ -56,7 +56,7 @@ All paths are under `/api/companies/:companyId/decision-model`:
 
 | Method/path | Access and behavior |
 | --- | --- |
-| `GET /` | Board; returns manager capability and settings/compatible choices to connection managers |
+| `GET /` | Board; returns manager capability, settings/compatible choices, and the registered `features` catalog with purpose enablement to connection managers |
 | `PUT /` | Connection manager; validates and audits configuration |
 | `PUT /purposes` | Connection manager; saves the company direct-Jev purpose switches |
 | `GET /availability` | Authenticated company caller; local authorization check |
@@ -64,6 +64,95 @@ All paths are under `/api/companies/:companyId/decision-model`:
 | `GET /history` | Existing company cost-read rules; date bounds and limit up to 500 |
 
 There is no general HTTP decision execution endpoint.
+
+## Feature catalog, escalation, and agent guidance
+
+Product features are declared once in the shared catalog
+(`DECISION_FEATURE_CATALOG` in `packages/shared/src/decision-models.ts`), which
+holds each feature's stable id, label, purpose, `background` flag, confidence
+gate, and fallback. The server registers the executable handle with
+`defineDecisionFeature(id, { background, purpose })`; for any id in the catalog
+the handle must agree with it (purpose, background, and an explicit confidence),
+so a feature cannot silently diverge from what the UI and settings page describe.
+`GET /api/companies/:companyId/decision-model` returns only the registered
+features, each with `enabled` derived from the company's purpose switches.
+
+Registered server-side features:
+
+| Feature | Purpose | Mode | Action |
+| --- | --- | --- | --- |
+| `issues.classify` | `priority` | background | Set priority when still default, above the confidence gate |
+| `issues.dedupe` | `issue_triage` | background | Escalate a confident duplicate to the Decisions queue |
+| `issues.triage` | `issue_triage` | background | Triage a task the recovery sweep already escalated to the board |
+| `plans.gate` | `task_planning` | background | When a plan confirmation is accepted, hold execution if the plan is not ready |
+| `qa.acceptance` | `qa_acceptance` | agent/human | Block an agent's self-review completion when acceptance criteria are not met |
+
+`issues.triage` runs from the recovery sweep, after an issue is already
+`blocked`; it never runs on a user action. A confident `resume`/`wake` verdict is
+recorded but performs no mutation (the recovery engine owns waking), while any
+other verdict becomes a board question. It is idempotent per task for a day, so a
+30-second sweep cannot re-bill the provider. Because it runs as a system actor it
+is company-sponsored (`background`), which is why the shared catalog marks it
+`background: true` rather than the "agent/human" mode in the original spec draft.
+
+`plans.gate` runs in the interaction-accept route *before* the resolution
+transaction, so the provider call never runs while rows are locked. A `gate`
+verdict accepts the plan but suppresses the execution start and turns the missing
+detail into a board question; an unavailable model is fail-open (`proceed`).
+
+`qa.acceptance` gates only an **agent**-origin approval comment, so a human's
+explicit approval is never overridden. A `fail` verdict leaves the task in review
+for a human instead of auto-completing it. It is fail-open, including when the
+task has no plan document to compare against.
+
+The catalog is the complete set of server-side decision features. Three
+candidate features from the original draft are deliberately **not** server
+features and are not in the catalog:
+
+- **Inbox gardening** is the `garden-inbox` skill, which scans a user's inbox,
+  requires a checkbox confirmation, and archives only accepted candidates. It is
+  deterministic, reversible, and confirmation-gated; a server auto-archive would
+  contradict that contract.
+- **PR mergeability** is the `pr-gardening` skill, whose readiness check is
+  explicitly scripts, not LLM analysis, and which never merges. There is no
+  server auto-merge for a decision to gate.
+- **Outbound guardrails** for chat already run at the single projection boundary
+  (`projectSafeChatPublicationText`), which deterministically strips internal
+  reasoning/tool/log content and redacts private keys, known tokens, labelled
+  secrets, and connection strings before any provider sees the text. A fuzzy
+  model call there would be more expensive and less reliable than that layer.
+
+### Human escalation loop
+
+`escalateDecision(db, input)` connects a below-threshold or authority-gated
+decision to the left-menu **Decisions** queue. When the caller has an issue
+(shape A) it creates an `ask_user_questions` interaction; the pending interaction
+is seeded into the **Questions** queue by the `ask-user-questions` rule, so no
+queue row is written directly. Only metadata crosses the boundary: the feature
+id, the question, and the option labels. The decision `state` and the provider's
+answer are never copied into the interaction.
+
+Shape B (an agent/run is present and the options carry effects that should run
+after a human choice) opens a `decisions` row and adds it to the queue; it needs a
+live, issue-scoped run and stays on the agent path (`typesafe_ask`) in this
+release. Shape C (no issue at all, for example `guardrails.outbound` or
+`inbox.garden`) has no queue source yet and returns `none`; those features report
+on their own surface. Queueing shape C needs a new attention source kind and a
+migration.
+
+Every escalation writes an activity-log entry (`decision_feature.escalated`).
+The invocation still settles through the normal path, so the request and its
+charge appear under Activity → Costs → Decisions even when the answer escalated.
+
+### Agent guidance
+
+When a company has an enabled, configured decision model, the heartbeat
+task-context build prepends a short guidance block (`resolveDecisionGuidance` in
+`server/src/services/decision-features.ts`). It tells agents that a calibrated
+decision service is available and to escalate rather than act below the stated
+threshold. The block is omitted entirely when no path is enabled, so there is no
+dead instruction. The server-side decision path has no agent tool; the block
+names the `typesafe_ask` connector tool only when the provider is direct TypeSafe.
 
 ## Provider dependencies and verification
 

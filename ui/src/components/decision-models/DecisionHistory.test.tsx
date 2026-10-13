@@ -5,10 +5,28 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { DecisionHistoryTable } from "./DecisionHistory";
+import { entry } from "../../../storybook/stories/decision-models/fixtures";
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompany: { issuePrefix: "ACM" } }),
 }));
+
+describe("decision history feature labels", () => {
+  it.each([
+    ["issues.dedupe", "Duplicate check"],
+    ["settings.test", "Setup test"],
+    ["future.feature", "future.feature"],
+  ])("shows %s as %s", (feature, label) => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      flushSync(() => root.render(<MemoryRouter><DecisionHistoryTable entries={[{ ...entry, feature }]} /></MemoryRouter>));
+      expect(container.textContent).toContain(label);
+    } finally {
+      flushSync(() => root.unmount());
+    }
+  });
+});
 
 describe("model history setup links", () => {
   it.each([

@@ -5,7 +5,7 @@ import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
 import { retryIdempotentDatabaseOperation } from "../database-retry.js";
 import { externalConversationStateSql, nonIdleSlackIssueCondition, resumeSlackConversation } from "./slack-conversation-state.js";
 import { documentService } from "./documents.js";
-import { suggestIssuePriority } from "./decision-features.js";
+import { suggestDuplicateIssue, suggestIssuePriority } from "./decision-features.js";
 import { parseTaskSearch, taskSearchCtes, taskSearchScore } from "./task-search.js";
 import { createdFromIssueCondition } from "./issue-creation-origin.js";
 import { executionProjectionsForRuns } from "./execution-projection.js";
@@ -10489,6 +10489,9 @@ export function issueService(db: Db) {
       if (createdRef.current) {
         const issueId = createdRef.current.id;
         void suggestIssuePriority(db, { companyId, issueId }).catch(() => {});
+        // A semantic duplicate check runs only for genuinely new tasks: a task the
+        // title, conversation, or idempotency guard already reused never reaches here.
+        void suggestDuplicateIssue(db, { companyId, issueId }).catch(() => {});
       }
       return created;
     },

@@ -1,15 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import type { DecisionHistoryEntry } from "@paperclipai/shared";
+import { decisionFeatureLabel, type DecisionHistoryEntry } from "@paperclipai/shared";
 import { decisionModelsApi } from "@/api/decision-models";
 import { Link } from "@/lib/router";
 import { formatDateTime, formatTokens, formatDetailedCents, providerDisplayName } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useFastResponsesEnabled } from "@/hooks/useFastResponsesEnabled";
-
-const FEATURE_LABELS: Record<string, string> = {
-  "settings.test": "Setup test",
-  "issues.classify": "Issue priority",
-};
 
 export function DecisionHistoryTable({ entries, fastResponse = false, connectionsEnabled = true }: { entries: (DecisionHistoryEntry & { publicationStatus?: string; connectionName?: string | null })[]; fastResponse?: boolean; connectionsEnabled?: boolean }) {
   if (!entries.length) return <p className="text-sm text-muted-foreground">{fastResponse ? "No fast responses in this period." : "No decision requests in this period."} <Link to={connectionsEnabled ? "/company/settings/connections" : fastResponse ? "/company/settings/instance/experimental" : "/company/settings"} className="underline underline-offset-4">{fastResponse ? connectionsEnabled ? "Configure fast response" : "Enable experimental fast responses" : "Configure a decision model"}</Link> to run a test.</p>;
@@ -18,7 +13,7 @@ export function DecisionHistoryTable({ entries, fastResponse = false, connection
     <div className="overflow-x-auto"><table className="w-full text-sm" aria-label={fastResponse ? "Fast responses" : "Decision requests"}>
       <thead><tr className="border-b border-border text-muted-foreground">{["When / feature", "Responsible", "Task", ...(fastResponse ? ["Connection"] : []), "Model", "Status", "Duration", "Tokens in / out", "Cost"].map(label => <th key={label} className="px-3 py-2 text-left font-medium">{label}</th>)}</tr></thead>
       <tbody>{entries.map(row => <tr key={row.id} className="border-b border-border last:border-0">
-        <td className="px-3 py-3"><div className="whitespace-nowrap">{formatDateTime(row.startedAt)}</div><div className="text-xs text-muted-foreground">{FEATURE_LABELS[row.feature] ?? row.feature}</div></td>
+        <td className="px-3 py-3"><div className="whitespace-nowrap">{formatDateTime(row.startedAt)}</div><div className="text-xs text-muted-foreground">{decisionFeatureLabel(row.feature)}</div></td>
         <td className="px-3 py-3">{row.actorType === "system" ? "Paperclip services" : row.userName ?? (row.responsibleUserId === "local-board" ? "Board" : "Former user")}</td>
         <td className="px-3 py-3">{row.issueId ? <Link className="underline underline-offset-4" to={`/issues/${row.issueIdentifier ?? row.issueId}`}>{row.issueIdentifier ?? "View task"}</Link> : "—"}</td>
         {fastResponse && <td className="px-3 py-3">{row.connectionName ?? (row.connectionId ? "Removed connection" : "—")}</td>}

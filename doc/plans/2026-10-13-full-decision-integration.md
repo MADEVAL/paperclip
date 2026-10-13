@@ -360,3 +360,59 @@ Corrections made to this spec after verification:
 3. `DECISION_MODELS` line number corrected to `:5-11`.
 4. Call-site anchors that are not yet pinned (`plans.gate`, `guardrails.outbound`)
    are marked "anchor in the feature PR" instead of asserted.
+
+## 17. Implementation status (2026-10-13)
+
+Foundation (rollout steps 1–3 and 5) is implemented:
+
+- **Shared catalog.** `DECISION_FEATURE_CATALOG` in
+  `packages/shared/src/decision-models.ts` carries id, label, description,
+  purpose, `background`, confidence, and fallback for all eight features, plus
+  `decisionFeatureLabel`, `decisionFeatureDefinition`,
+  `decisionFeaturesForPurpose`, and the `DecisionFeatureStatus` type.
+- **Registry expansion.** `defineDecisionFeature(id, { background, purpose,
+  label?, confidence? })` keeps the `WeakSet` gate and now carries
+  `label`/`confidence`; for any catalog id the handle must agree with the catalog
+  (drift guard).
+- **Human loop.** `escalateDecision(db, input)` implements shape A (issue-scoped
+  `ask_user_questions`, auto-seeded into the `questions` queue) and returns `none`
+  for shape C. Shape B stays on the agent path in v1.
+- **Feature runner / first features.** `issues.classify` (refactored to the new
+  registry), the new `issues.dedupe`, `issues.triage`, plus `plans.gate` and
+  `qa.acceptance` are registered. `issues.dedupe` escalates a confident duplicate
+  instead of mutating a task (no safe duplicate-link primitive exists yet);
+  `issues.triage` triages a task the recovery sweep already blocked (idempotent
+  per task for a day); `plans.gate` runs in the accept route before the
+  resolution transaction and holds execution when the plan is not ready;
+  `qa.acceptance` blocks an agent's self-review completion when acceptance
+  criteria are not met (never a human's approval). Because `issues.triage` runs as
+  a system actor from the sweep, its catalog entry is `background: true`
+  (company-sponsored) instead of the draft's "agent/human" mode; the alternative
+  (a board actor) would fail closed on cloud instances.
+- **Prompt guidance.** `decisionGuidance` / `resolveDecisionGuidance` gated on an
+  enabled, configured decision model, injected into the heartbeat task-context
+  build.
+- **API + UI.** `GET /decision-model` returns `features`; cost history uses the
+  shared label map; the settings page shows the features behind each purpose.
+- **Docs.** `doc/decision-models.md`, `doc/connections/TYPESAFE.md`.
+
+Deferred, with named reasons:
+
+- **Not server features** (`inbox.garden`, `pr.mergeability`,
+  `guardrails.outbound`). Decided on review: `inbox.garden` is the `garden-inbox`
+  skill (deterministic, confirmation-gated), `pr.mergeability` is the
+  `pr-gardening` skill (readiness check is scripts, never merges), and outbound
+  chat guardrails already run at `projectSafeChatPublicationText`, which
+  deterministically redacts private keys, known tokens, labelled secrets, and
+  connection strings. They are removed from the shared catalog and recorded in
+  `doc/decision-models.md`. Optional follow-ups (a Jev tie-breaker inside the
+  garden skill, an advisory Jev line in the PR report) are skill changes, not
+  server work.
+- **Shape B and shape C escalations** need, respectively, a live issue-scoped run
+  and a new attention source kind plus a migration.
+
+Verification used: `packages/shared/src/decision-models.test.ts`,
+`server/src/__tests__/decision-feature-registry.test.ts` (pure),
+`server/src/__tests__/decision-features.test.ts` (DB: escalation, dedupe,
+guidance), plus the existing decision and issue-create suites.
+

@@ -1,6 +1,6 @@
-import type { DecisionConnectionChoice, DecisionHistoryEntry, DecisionModelSettings, DecisionPurpose, DecisionResult, UpdateDecisionModel } from "@paperclipai/shared";
+import type { DecisionConnectionChoice, DecisionFeatureStatus, DecisionHistoryEntry, DecisionModelSettings, DecisionPurpose, DecisionResult, UpdateDecisionModel } from "@paperclipai/shared";
 import { api } from "./client";
-export interface DecisionSettingsResponse { canManage: boolean; settings: DecisionModelSettings | null; choices: DecisionConnectionChoice[] }
+export interface DecisionSettingsResponse { canManage: boolean; settings: DecisionModelSettings | null; choices: DecisionConnectionChoice[]; features: DecisionFeatureStatus[] }
 export const decisionModelsApi = {
   settings: (companyId: string) => api.get<DecisionSettingsResponse>(`/companies/${companyId}/decision-model`),
   update: (companyId: string, settings: UpdateDecisionModel) => api.put<DecisionModelSettings>(`/companies/${companyId}/decision-model`, settings),

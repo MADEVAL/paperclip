@@ -302,6 +302,7 @@ import {
   projectReadSqlCondition,
 } from "../services/authorization.js";
 import { stalledReviewDecisionService } from "../services/stalled-review-decisions.js";
+import { checkAcceptance, escalateDecision, gatePlan, plansGate } from "../services/decision-features.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
 import { ensurePersonalPrivateProject } from "../services/projects.js";
@@ -16906,15 +16907,42 @@ export function issueRoutes(
         throw unprocessable(
           "Remembered permission is only supported for tool reviews",
         );
-      const { interaction, createdIssues, continuationIssue } =
-        await interactionSvc.acceptInteraction(issue, interactionId, req.body, {
-          agentId: actor.agentId,
-          runId: actor.runId,
-          userId: actor.actorType === "user" ? actor.actorId : null,
-          resolverPolicyRestriction:
-            resolutionAuthorization.resolverPolicyRestriction,
-          suggestedTaskEffectsAuthorized,
-        });
+      // A plan gate runs before the resolution transaction so the provider call
+      // never runs while issue/interaction rows are locked. Fail-open: an
+      // unavailable decision model returns `proceed` and changes nothing.
+      const planGate =
+        current.kind === "request_confirmation" &&
+        readAcceptedPlanConfirmationTarget(current.payload, issue.id)?.key === "plan"
+          ? await gatePlan(db, { companyId: issue.companyId, issueId: issue.id, actor: req.actor }).catch(() => null)
+          : null;
+      const suppressPlanExecutionStart = planGate?.status === "gate";
+      const resolutionActor = {
+        agentId: actor.agentId,
+        runId: actor.runId,
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        resolverPolicyRestriction:
+          resolutionAuthorization.resolverPolicyRestriction,
+        suggestedTaskEffectsAuthorized,
+      };
+      const { interaction, createdIssues, continuationIssue } = suppressPlanExecutionStart
+        ? await interactionSvc.acceptInteraction(issue, interactionId, req.body, resolutionActor, { suppressPlanExecutionStart: true })
+        : await interactionSvc.acceptInteraction(issue, interactionId, req.body, resolutionActor);
+      if (planGate?.status === "gate") {
+        // Accepted, but held back from execution: surface the missing detail to
+        // the board. Best-effort; it never affects the accept response.
+        void escalateDecision(db, {
+          companyId: issue.companyId, featureId: plansGate.id, invocationId: planGate.invocationId,
+          title: `Plan held back: ${issue.identifier ?? issue.title}`,
+          question: `The plan for ${issue.identifier ?? issue.title} is accepted but was not ready to execute (${planGate.choice}). What should happen?`,
+          summary: "A background plan gate ran when the plan was accepted. The plan was accepted but execution did not start.",
+          options: [
+            { id: "revise", label: "Revise the plan and re-confirm" },
+            { id: "run-anyway", label: "Execute it as-is" },
+            { id: "discard", label: "Discard the plan" },
+          ],
+          issueId: issue.id, idempotencyKey: `plan-gate:${current.id}`,
+        }).catch(() => {});
+      }
       const toolAction =
         interaction.payload && typeof interaction.payload === "object"
           ? (
@@ -17150,7 +17178,8 @@ export function issueRoutes(
         interaction.kind === "request_confirmation" &&
         interaction.status === "accepted" &&
         acceptedPlanTarget?.issueId === issue.id &&
-        acceptedPlanTarget.key === "plan";
+        acceptedPlanTarget.key === "plan" &&
+        !suppressPlanExecutionStart;
       await queueResolvedInteractionContinuationWakeup({
         db,
         heartbeat,
@@ -18477,6 +18506,13 @@ export function issueRoutes(
           currentExecutionState.currentParticipant ?? null,
         ) &&
         isApprovalReviewComment(req.body.body);
+      // Only an agent's self-review is gated by the acceptance check: a human's
+      // explicit approval must never be overridden. Fail-open on any error.
+      const acceptanceAllowsCompletion =
+        shouldAutoApproveReviewComment && actor.actorType === "agent"
+          ? (await checkAcceptance(db, { companyId: issue.companyId, issueId: issue.id, actor: req.actor }).catch(() => ({ status: "pass" as const }))).status === "pass"
+          : true;
+      const shouldAutoApprove = shouldAutoApproveReviewComment && acceptanceAllowsCompletion;
 
       // Persist the comment and the auto-approval state transition atomically when both apply.
       // Without a single transaction, a 422 (or any error) thrown by the status update after the
@@ -18484,7 +18520,7 @@ export function issueRoutes(
       let comment: Awaited<ReturnType<typeof svc.addComment>>;
       let goalCommentSteered = false;
       let fastResponseEnqueued = false;
-      if (shouldAutoApproveReviewComment) {
+      if (shouldAutoApprove) {
         const transition = applyIssueExecutionPolicyTransition({
           issue: currentIssue,
           policy: currentExecutionPolicy,

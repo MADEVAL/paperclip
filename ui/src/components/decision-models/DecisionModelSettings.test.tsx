@@ -28,6 +28,22 @@ it("consumes an added connection once and preserves a later choice across refetc
   } finally { act(() => root.unmount()); container.remove(); }
 });
 
+it("shows the registered features behind each purpose for a direct TypeSafe connection", async () => {
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  const typesafe = { ...configured, provider: "typesafe" as const, model: "jev-latest", purposes: { priority: true, issue_triage: false } };
+  const features = [
+    { id: "issues.classify", label: "Issue priority", description: "Suggest a priority.", purpose: "priority" as const, background: true, confidence: 0.7, fallback: "current-behaviour" as const, enabled: true },
+    { id: "issues.dedupe", label: "Duplicate check", description: "Detect duplicates.", purpose: "issue_triage" as const, background: true, confidence: 0.8, fallback: "current-behaviour" as const, enabled: false },
+  ];
+  try {
+    await act(async () => root.render(<MemoryRouter><DecisionModelSettingsView settings={typesafe} choices={choices} features={features}
+      onSave={vi.fn()} onTest={vi.fn()} onAdd={vi.fn()} /></MemoryRouter>));
+    expect(container.textContent).toContain("Features: Issue priority");
+    expect(container.textContent).toContain("Features: Duplicate check");
+  } finally { act(() => root.unmount()); container.remove(); }
+});
+
 it("clears test feedback when another manager changes the saved configuration", async () => {
   const container = document.createElement("div"); document.body.appendChild(container);
   const root = createRoot(container);

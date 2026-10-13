@@ -270,7 +270,7 @@ describe("company decision service", () => {
     expect((await request(app).get(url)).body.canManage).toBe(true);
     expect((await request(app).get(`/api/companies/${other.companyId}/decision-model`)).status).toBe(403);
     actor = { type: "board", userId: "alice", source: "session", companyIds: [f.companyId], memberships: [{ companyId: f.companyId, status: "active", membershipRole: "viewer" }] };
-    expect((await request(app).get(url)).body).toEqual({ canManage: false, settings: null, choices: [] });
+    expect((await request(app).get(url)).body).toEqual({ canManage: false, settings: null, choices: [], features: [] });
     expect((await request(app).put(url).send(f.config)).status).toBe(403);
     expect((await request(app).post(`${url}/test`).send({ actor: { type: "system" } })).status).toBe(403);
     actor = f.context.actor;

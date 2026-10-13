@@ -5,7 +5,7 @@ import {
   decisionInvocations, heartbeatRuns, issues, projects, companySecrets, type Db,
 } from "@paperclipai/db";
 import {
-  DECISION_MODELS, TYPESAFE_PURPOSE_IDS, decisionProviderForConnection, decisionRequestSchema, updateDecisionModelSchema, updateDecisionPurposesSchema,
+  DECISION_MODELS, TYPESAFE_PURPOSE_IDS, decisionFeatureDefinition, decisionProviderForConnection, decisionRequestSchema, updateDecisionModelSchema, updateDecisionPurposesSchema,
   centsToUnits, unitsToCents, type DecisionAvailability, type DecisionConnectionChoice, type DecisionHistoryEntry,
   type DecisionModelSettings, type DecisionProvider, type DecisionRequest, type DecisionResult, type DecisionUnavailableReason, type TypesafePurpose, type UpdateDecisionModel,
 } from "@paperclipai/shared";
@@ -20,18 +20,43 @@ import { logActivity } from "./activity-log.js";
 import { decisionReceipt, runDecisionProvider, type DecisionProviderOutcome } from "./decision-model-provider.js";
 
 const registeredFeatures = new WeakSet<object>();
-/** Register once in a server module. Feature handles cannot be supplied over JSON/API. */
-export function defineDecisionFeature(id: string, options: { background?: boolean; purpose?: TypesafePurpose } = {}) {
+/** Options for a registered decision feature. `label`/`confidence` default from the shared catalog. */
+export interface DecisionFeatureOptions {
+  background?: boolean;
+  purpose?: TypesafePurpose;
+  label?: string;
+  confidence?: number;
+}
+/**
+ * Register once in a server module. Feature handles cannot be supplied over
+ * JSON/API. When the id is in the shared product catalog the executable handle
+ * must agree with it, so a feature cannot silently diverge from what the UI and
+ * the settings page tell an operator it does.
+ */
+export function defineDecisionFeature(id: string, options: DecisionFeatureOptions = {}) {
   if (!/^[a-z][a-z0-9_.-]{0,99}$/.test(id)) throw new Error("Invalid decision feature identifier");
   if (options.purpose && !TYPESAFE_PURPOSE_IDS.includes(options.purpose)) throw new Error("Invalid decision feature purpose");
-  const feature = Object.freeze({ id, background: options.background === true, purpose: options.purpose ?? null });
+  const catalog = decisionFeatureDefinition(id);
+  if (catalog) {
+    if (catalog.purpose !== options.purpose) throw new Error(`Decision feature ${id} purpose does not match the shared catalog`);
+    if (catalog.background !== (options.background === true)) throw new Error(`Decision feature ${id} background does not match the shared catalog`);
+    if (options.confidence !== undefined && options.confidence !== catalog.confidence) throw new Error(`Decision feature ${id} confidence does not match the shared catalog`);
+  }
+  const feature = Object.freeze({
+    id,
+    background: options.background === true,
+    purpose: options.purpose ?? null,
+    label: catalog?.label ?? options.label ?? id,
+    confidence: options.confidence ?? catalog?.confidence ?? 0,
+  });
   registeredFeatures.add(feature);
   return feature;
 }
+export type DecisionFeature = ReturnType<typeof defineDecisionFeature>;
 export const settingsDecisionTest = defineDecisionFeature("settings.test");
 export interface DecisionContext {
   companyId: string;
-  feature: ReturnType<typeof defineDecisionFeature>;
+  feature: DecisionFeature;
   actor: AuthorizationActor | { type: "system" };
   issueId?: string;
   projectId?: string;

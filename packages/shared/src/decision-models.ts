@@ -33,6 +33,62 @@ export const updateDecisionPurposesSchema = z.object({
 }).strict();
 export type UpdateDecisionPurposes = z.infer<typeof updateDecisionPurposesSchema>;
 export type DecisionConnectionChoice = AiManagedConnectionSummary & { decisionModel: string };
+
+/**
+ * The product features that may ask the company decision model, in the order an
+ * operator should read them. This is the single source of truth for feature ids
+ * and labels: the server registers a matching executable handle and the UI reads
+ * labels and purpose hints from here.
+ *
+ * Every feature is opt-in. A direct TypeSafe connection runs a feature only when
+ * its `purpose` is switched on for the company; other providers ignore purposes.
+ * `background` marks features a system actor may sponsor on the company's budget
+ * (see `allowBackground`). `confidence` is the minimum answer confidence before
+ * the feature acts; `fallback` is what happens below the gate.
+ */
+export interface DecisionFeatureCatalogEntry {
+  id: string;
+  label: string;
+  /** Short operator-facing description of what turning the purpose on spends on. */
+  description: string;
+  purpose: TypesafePurpose;
+  background: boolean;
+  confidence: number;
+  fallback: "current-behaviour" | "escalate";
+}
+
+export const DECISION_FEATURE_CATALOG: readonly DecisionFeatureCatalogEntry[] = [
+  { id: "issues.classify", label: "Issue priority", description: "Suggest a priority for a newly created task.", purpose: "priority", background: true, confidence: 0.7, fallback: "current-behaviour" },
+  { id: "issues.dedupe", label: "Duplicate check", description: "Detect whether a new task duplicates an open one.", purpose: "issue_triage", background: true, confidence: 0.8, fallback: "current-behaviour" },
+  { id: "issues.triage", label: "Issue triage", description: "Choose the next action for a stalled or ambiguous task.", purpose: "issue_triage", background: true, confidence: 0.7, fallback: "escalate" },
+  { id: "plans.gate", label: "Plan gate", description: "Check a plan states a verifiable outcome before execution.", purpose: "task_planning", background: true, confidence: 0.75, fallback: "current-behaviour" },
+  { id: "qa.acceptance", label: "Acceptance checks", description: "Score acceptance criteria against a change.", purpose: "qa_acceptance", background: false, confidence: 0.7, fallback: "current-behaviour" },
+] as const;
+
+export const DECISION_FEATURE_IDS = DECISION_FEATURE_CATALOG.map((entry) => entry.id);
+
+const DECISION_FEATURE_BY_ID = new Map(DECISION_FEATURE_CATALOG.map((entry) => [entry.id, entry]));
+
+/** Internal, non-product features that still appear in decision history. */
+const INTERNAL_DECISION_FEATURE_LABELS: Record<string, string> = { "settings.test": "Setup test" };
+
+export function decisionFeatureDefinition(id: string): DecisionFeatureCatalogEntry | null {
+  return DECISION_FEATURE_BY_ID.get(id) ?? null;
+}
+
+/** Product label for a feature id; falls back to the raw id so history never breaks. */
+export function decisionFeatureLabel(id: string): string {
+  return DECISION_FEATURE_BY_ID.get(id)?.label ?? INTERNAL_DECISION_FEATURE_LABELS[id] ?? id;
+}
+
+export function decisionFeaturesForPurpose(purpose: TypesafePurpose): DecisionFeatureCatalogEntry[] {
+  return DECISION_FEATURE_CATALOG.filter((entry) => entry.purpose === purpose);
+}
+
+/** A catalog entry plus whether the company has switched its purpose on. */
+export interface DecisionFeatureStatus extends DecisionFeatureCatalogEntry {
+  enabled: boolean;
+}
 export type DecisionUnavailableReason = "not_configured" | "disabled" | "connection_unavailable" | "incompatible_connection" | "access_denied" | "responsible_user_missing" | "background_disabled" | "budget_blocked" | "purpose_disabled";
 export type DecisionAvailability = { available: true } | { available: false; reason: DecisionUnavailableReason };
 const instructions = z.string().trim().min(1).max(8000);

@@ -206,6 +206,9 @@ type InteractionResolutionMutationOptions = {
     tx: DbTransaction,
     interaction: IssueThreadInteraction,
   ) => Promise<void>;
+  /** Set when a resolver gate decided the accepted plan is not ready: keep the
+   * accept (and its audit) but do not flip the task into execution. */
+  suppressPlanExecutionStart?: boolean;
 };
 
 const GITHUB_PULL_REQUEST_URL_PATTERN =
@@ -2280,6 +2283,7 @@ export function issueThreadInteractionService(
         issueContext.id,
       );
       const acceptedPlanStartsExecution =
+        args.mutationOptions?.suppressPlanExecutionStart !== true &&
         lockedCurrent.kind === "request_confirmation" &&
         acceptedPlanTarget?.issueId === issueContext.id &&
         acceptedPlanTarget.key === "plan" &&
