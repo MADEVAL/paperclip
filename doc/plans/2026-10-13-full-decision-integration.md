@@ -34,7 +34,7 @@ Do not conflate these. They are separate subsystems with separate tables.
 | Name | What it is | Where | Populated by |
 | --- | --- | --- | --- |
 | Company decision model | One shared API connection Paperclip uses for typed decisions (Jev, OpenAI, OpenRouter) | `company_decision_models`, `decision_invocations`, `server/src/services/decision-models.ts` | product callers (this spec) |
-| Decisions queue (left menu) | Human triage queue "what needs your decision" | `decision_queues`, `decision_queue_items`, `server/src/services/decision-queues.ts`, `ui/src/pages/DecisionQueuePage.tsx` | `attention.ts:1928` `materializeSeededQueues` from attention sources |
+| Decisions queue (left menu) | Human triage queue "what needs your decision" | `decision_queues`, `decision_queue_items`, `server/src/services/decision-queues.ts`, `ui/src/pages/DecisionQueuePage.tsx` | `attention.ts:1928` `materializeSeededQueues` (seeds `prs/plans/questions`) plus the manual `addItem` route |
 | Costs → Decisions | Metadata journal of decision-model calls | `ui/src/components/decision-models/DecisionHistory.tsx`, costs tab at `ui/src/pages/Costs.tsx:733` | `decision_invocations` |
 
 Agent-side Jev is a **fourth** path: the `typesafe_ask` connector tool
@@ -42,13 +42,18 @@ Agent-side Jev is a **fourth** path: the `typesafe_ask` connector tool
 which needs its own tool connection + install and is independent of the
 decision model.
 
+Note: a `decision_queue_items.sourceKind` of `"decision"` refers to the
+`decisions` table (agent-created decisions the board resolves), which is again a
+different subsystem from the company decision model. Do not read the left-menu
+"Decisions" as decision-model usage; that lives in Costs → Decisions.
+
 ## 2. Invariants this spec must preserve
 
 Verified contracts, unchanged by this work:
 
 - **Company scope** on every row (`company_decision_models`, `decision_invocations`, `decision_queue_items`).
-- **Accounting lock + budgets** on admission and settlement (`decision-models.ts:188-231`, `:140-173`).
-- **Secret service** resolves keys at dispatch; never stored in config (`decision-models.ts:180-187`).
+- **Accounting lock + budgets** on admission and settlement (`decision-models.ts` `settle` :160-192, admission inside `decide` :208-251).
+- **Secret service** resolves keys at dispatch; never stored in config (`decision-models.ts:199-207`).
 - **Metadata-only** invocation history; no state/answers/raw payloads (`packages/db/src/schema/decision_models.ts:19-45`).
 - **Cost ledger** `usageKind = "decision"`, agentless allowed (`packages/db/src/schema/cost_events.ts:43`); direct Jev rate card `typesafe-jev-2026-10-12`, 4.2 cents per 1M input tokens (`decision-model-provider.ts:41-45`).
 - **Fail closed**: no registered feature, no `purpose` gate, no `allowBackground` → no call.
@@ -61,14 +66,15 @@ a DB path, not Telemetry. This spec adds **no** first-party Telemetry events.
 
 Already implemented. No changes. For reference:
 
-- Providers: `DECISION_MODELS` = openai | openrouter | typesafe (`packages/shared/src/decision-models.ts:4-10`).
+- Providers: `DECISION_MODELS` = openai | openrouter | typesafe (`packages/shared/src/decision-models.ts:5-11`).
 - Direct Jev call: `runTypesafeDecision` maps boolean↔`noul`, choice↔choice, score↔score (`decision-model-provider.ts:49-104`).
-- Purposes gate: `purpose_disabled` (`decision-models.ts:143-146`).
+- Purposes gate: `purpose_disabled` (`decision-models.ts:144-146`).
+- `availabilityForRequest` memoizer: `decision-models.ts:156-159`.
 
 ## 4. Layer 2 — Feature registry (expand)
 
 Today `defineDecisionFeature(id, { background, purpose })`
-(`server/src/services/decision-models.ts:24-30`). Expand it to carry the full
+(`server/src/services/decision-models.ts:24-31`). Expand it to carry the full
 definition so every feature is one declaration and one call site.
 
 ```
@@ -120,12 +126,14 @@ Wire the features where Paperclip already makes a fuzzy judgment today.
   matching `purpose` (`SKILL.md:51-89`, sibling files). Keep the agent path on
   the connector tool; the decision-model path is for the **server** to call the
   same judgment without an agent run (recovery, watchdog, routines).
-- `plans.gate` — on plan acceptance (the plan document confirmation path).
+- `plans.gate` — when a plan-document confirmation is resolved. Anchor the exact
+  server call site in the feature PR (the confirmation path is not yet pinned).
 - `inbox.garden` — the inbox archive-candidate scan.
 - `guardrails.outbound` — immediately before outbound publication (Slack/email/
-  chat/webhook), using the existing outbound publication choke point.
-- `issues.dedupe` — in `issueService.create` before the title guard.
-- `pr.mergeability` — the PR-gardening path.
+  chat/webhook). Find the single outbound choke point in the feature PR and route
+  the hold through it; do not add per-transport hooks.
+- `issues.dedupe` — in `issueService.create`, ahead of the title guard.
+- `pr.mergeability` — the PR-gardening skill path (agent-side gate).
 
 Rule: a background feature must never block a user action. Best-effort with a
 short timeout, exactly like `suggestIssuePriority`. Durability (retry/outbox)
@@ -133,36 +141,58 @@ is explicitly out of scope v1 and named as a follow-up where a feature needs it.
 
 ## 6. Layer 4 — Human loop (connect decisions to the Decisions queue)
 
-This is the missing link the user noticed: Jev never appears in the left-menu
-**Decisions**.
+This is the missing link: Jev never appears in the left-menu **Decisions**.
 
-Two escalation targets exist and both are already modelled:
+Verified facts before choosing a design:
 
-- Issue-scoped → create an `ask_user_questions` interaction. Pending
-  `ask_user_questions` are auto-collected into the `questions` queue by
-  `DECISION_QUEUE_SEEDS` (`server/src/services/decision-queues.ts:74-83`).
-- Non-issue-scoped → add a queue item with `sourceKind: "decision"`
-  (`ATTENTION_SOURCE_KINDS` includes `"decision"`, `packages/shared/src/types/attention.ts:8-21`)
-  through `decisionQueueService.addItem` (`decision-queues.ts:481-503`).
+- The queue is fed by `attentionService` → `materializeSeededQueues`
+  (`server/src/services/attention.ts:1928`) using `DECISION_QUEUE_SEEDS`
+  (`server/src/services/decision-queues.ts:53-84`): keys `prs`, `plans`,
+  `questions`. A queue created by materialization sets `seedRulesEnabled: true`
+  (`decision-queues.ts:722`); the schema default is `false`
+  (`packages/db/src/schema/decision_queues.ts:38`).
+- `decision_queue_items.sourceKind` validates against `ATTENTION_SOURCE_KINDS`
+  (`packages/shared/src/types/attention.ts:8-21`), which includes `"decision"`.
+  But `"decision"` resolves to a row in the **`decisions`** table
+  (`decision-queues.ts:218-224`), not to `decision_invocations`.
+- A `decisions` row requires `originAgentId`, `originIssueId`, `originRunId`
+  (NOT NULL, `packages/db/src/schema/decisions.ts:43-45`) and is created by an
+  agent run (`server/src/routes/decisions.ts:42-63`; `decisionService.create`
+  at `server/src/services/decisions.ts:253`).
+- `decisionQueueService.addItem` requires a readable source
+  (`requireSourceRead` → `canReadDecisionSource` → `sourceIssueId`,
+  `decision-queues.ts:200-333`). An arbitrary id is rejected.
 
-Spec: when a feature's `apply` returns `"escalated"` — or confidence is below
-threshold for an authority-gated action — the feature's `apply` must:
+So escalation has exactly three valid shapes:
 
-1. Persist the invocation as usual (it already did).
-2. Create the issue `ask_user_questions` interaction (issue-scoped) **or** a
-   `sourceKind: "decision"` queue item (system-scoped), carrying a bounded
-   summary: feature id, one-line question, options, and the invocation id.
-3. Never copy the state or the raw provider answer into the queue item
-   (metadata-only rule). The operator sees the question and options, not the
-   payload.
+A. **Issue-scoped (primary; no new tables).** Create an `ask_user_questions`
+   interaction on the issue. Pending ones are auto-collected into the `questions`
+   queue by the `ask-user-questions` seed rule (`decision-queues.ts:74-83`).
+   Works for every feature that has an issue: `issues.classify`, `issues.triage`,
+   `issues.dedupe`, `plans.gate`, `qa.acceptance`, `pr.mergeability`.
+
+B. **Option-with-effects (agent/run present).** When the escalation is "pick an
+   option, then act", call `decisionService.create({...})` (it needs
+   agent+run+issue), then `addItem({ companyId, key: "questions",
+   sourceKind: "decision", sourceId: decision.id, ... })`. Valid because the
+   `decisions` row now exists.
+
+C. **No-issue / system (`guardrails.outbound`, `inbox.garden`).** There is no
+   queue source for these today: `decisions` needs agent+issue+run and
+   `issue_thread_interaction` needs an issue. v1 rule: these features escalate on
+   their own surface (hold the message, report), not via the queue. Queueing them
+   is a follow-up that needs a new attention source kind plus a migration; out of
+   scope here.
 
 Add a thin helper `escalateDecision(db, ctx, { invocationId, question, options })`
-in `server/src/services/decision-features.ts`. It must respect company scope and
-write an activity-log entry.
+in `server/src/services/decision-features.ts`: shape A when an issue exists,
+shape B when a run exists and the options carry effects, else C. It writes an
+activity-log entry and copies only metadata (feature id, question, option labels,
+invocation id) — never the state or the provider answer.
 
-Result: a low-confidence `guardrails.outbound` hold, or an `issues.triage`
-"escalate" verdict, shows up under **Decisions → Questions**, and the existing
-All / Questions / Plans filters finally have content.
+Result: a low-confidence `issues.triage` "escalate" verdict shows up under
+**Decisions → Questions**, and the existing All / Questions / Plans filters
+finally have content.
 
 ## 7. Layer 5 — Prompt/agent integration
 
@@ -182,7 +212,7 @@ gated on availability:
   must name whichever path is actually available (decision connection vs tool
   connection vs both), read from `decisionModelService.availability` and the
   assigned-connection context. Reuse `availabilityForRequest` for one request
-  (`decision-models.ts:136-139`).
+  (`decision-models.ts:156-159`).
 - Keep it out of the prompt when no connection is enabled (no dead instruction).
 
 ## 8. Layer 6 — Accounting, budgets, history
@@ -204,9 +234,10 @@ Already correct for the model path. Required additions:
   "features enabled by this purpose" hint so an operator knows what turning it
   on spends on.
 - Costs → Decisions: label map from shared (above); provider already shown.
-- Decisions queue (`ui/src/pages/DecisionQueuePage.tsx`): items with
-  `sourceKind: "decision"` must render the feature label and the question/options
-  from the escalation summary, and link to the invoking issue/run when present.
+- Decisions queue (`ui/src/pages/DecisionQueuePage.tsx`): no new renderer is
+  required. Shape A items surface as `issue_thread_interaction` sources; shape B
+  items surface from the `decisions` row (title/body). Verify the feature label is
+  readable and that task/run links resolve.
 - Issue thread: `ask_user_questions` escalation uses the existing interaction
   card; no new interaction kind is required (see `create-issue-interaction-ui`).
 
@@ -224,11 +255,16 @@ handles only.
 
 ## 11. Data model
 
-- No new tables required. `company_decision_models.purposes` (migration `0338`)
-  gates features; `decision_invocations.feature` already stores the feature id;
-  `decision_queue_items` already supports `sourceKind: "decision"`.
-- If a future feature needs durable retry, add a `decision_requests` table in a
-  later, separate migration. Not now.
+- Escalation shapes A and B need **no new tables**: `company_decision_models.purposes`
+  (migration `0338`) gates features; `decision_invocations.feature` stores the
+  feature id; shape A reuses `issue_thread_interactions` (auto-seeded into the
+  `questions` queue); shape B reuses `decisions` + `decision_queue_items`
+  (`sourceKind: "decision"`).
+- Escalation shape C (system, no issue/agent/run) needs a **new** attention
+  source kind plus a migration (source that `sourceIssueId`/`canReadDecisionSource`
+  can resolve). Explicitly deferred.
+- Durable retry/outbox for background features: a separate later migration
+  (`decision_requests`). Not in v1.
 
 ## 12. Verification
 
@@ -281,3 +317,46 @@ when confidence is low.
 - Durable decision retry/outbox in v1.
 - Connector tool cost events (separate).
 - Any first-party Telemetry event.
+
+## 16. Spec verification against code (2026-10-13)
+
+Every claim above was checked in the tree at commit `e79f3b472` (plus the spec
+commit). Confirmed:
+
+- Callers of `decisionModelService`: `routes/decision-models.ts:14`,
+  `services/heartbeat.ts:5314` (`recoverInterrupted` only), and
+  `services/decision-features.ts`. No other product caller.
+- `defineDecisionFeature` is the only registry: `services/decision-models.ts:24-31`.
+- Tables exist: `company_decision_models` + `decision_invocations`
+  (`packages/db/src/schema/decision_models.ts`), `decision_queue_items` /
+  `decision_queues` (`packages/db/src/schema/decision_queues.ts`), `decisions`
+  (`packages/db/src/schema/decisions.ts`).
+- Queue seeds `prs/plans/questions` and the `ask-user-questions` rule:
+  `services/decision-queues.ts:53-84`; materialization sets `seedRulesEnabled: true`
+  at `:722`.
+- Left-menu page: `ui/src/App.tsx:447` → `WhatNeedsMe`; per-queue
+  `ui/src/pages/DecisionQueuePage.tsx`.
+- Costs → Decisions tab: `ui/src/pages/Costs.tsx:733`; history + label map:
+  `ui/src/components/decision-models/DecisionHistory.tsx:9`.
+- Bundled skills: `packages/skills-catalog/catalog/bundled/paperclip-operations/{issue-triage,task-planning}/SKILL.md`,
+  `.../quality/qa-acceptance/SKILL.md` (each names `typesafe_ask` + a `purpose`).
+- Prompt injection point: `server/src/services/heartbeat/task-markdown.ts:7`
+  (`buildPaperclipTaskMarkdown`).
+- `issues.classify` hook: `server/src/services/issues.ts:8`, `:9971`, `:10420`,
+  `:10489-10492`.
+- Rate card and accounting: `services/decision-model-provider.ts:41-45`,
+  `services/decision-models.ts` settlement :160-192, admission :208-251;
+  `usageKind = "decision"` check at `packages/db/src/schema/cost_events.ts:43`.
+
+Corrections made to this spec after verification:
+
+1. `sourceKind: "decision"` in the queue points at the **`decisions`** table
+   (agent+issue+run required), not at decision-model invocations. Section 6 was
+   rewritten: escalation is issue-interaction-first, `decisionService.create` only
+   when a run exists, and system-only escalations are explicitly deferred.
+2. Stale `decision-models.ts` line references were corrected to the current
+   `settle` :160-192, admission :208-251, secret :199-207, gate :144-146,
+   memoizer :156-159.
+3. `DECISION_MODELS` line number corrected to `:5-11`.
+4. Call-site anchors that are not yet pinned (`plans.gate`, `guardrails.outbound`)
+   are marked "anchor in the feature PR" instead of asserted.
