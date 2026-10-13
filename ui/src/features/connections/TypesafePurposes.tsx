@@ -8,7 +8,13 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { InlineBanner } from "@/components/InlineBanner";
 
 export function isTypesafeConnection(connection: ToolConnection): boolean {
-  return connection.config?.sourceTemplateKey === "typesafe";
+  // Only the agent-facing TypeSafe tool connector owns per-connection purposes.
+  // A direct TypeSafe Decision connection (connectionPurpose "ai") is governed
+  // by the company-level purposes in Decision model settings, so its Permissions
+  // page must not offer a second, conflicting set of switches.
+  return connection.config?.sourceTemplateKey === "typesafe"
+    && connection.connectionPurpose !== "ai"
+    && connection.transport === "rest_api";
 }
 
 function readMethodConfig(connection: ToolConnection): Record<string, unknown> {
