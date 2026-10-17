@@ -10,21 +10,21 @@
 | `origin` | `https://github.com/MADEVAL/paperclip.git` | твой форк |
 | `upstream` | `https://github.com/paperclipai/paperclip.git` | родительский репозиторий |
 | `master` | локально | **чистое зеркало** `upstream/master`. Своих коммитов здесь быть не должно |
-| `personal` | локально | `master` + **слой своих правок** (сейчас 4 сгруппированных коммита). Здесь ты работаешь, из неё ставится сервер |
+| `personal` | локально | `master` + **слой своих правок** (сгруппирован по доработкам). Здесь ты работаешь, из неё ставится сервер |
 | `backup/<что>-<дата>`, `deploy/<дата>` | теги | снимки для отката и деплоя. Создаются по необходимости, постоянных нет |
 
 Схема:
 
 ```
 upstream/master ──► master (только fast-forward, зеркало)
-                        └─► personal (твой слой: 4 коммита по доработкам)
+                        └─► personal (твой слой: доработки)
 ```
 
 Почему так: свои правки собраны слоем поверх зеркала, поэтому обновление
 upstream накатывается одной операцией `git rebase`, а не прогоняется через
 десятки конфликтов.
 
-2026-10-12: слой сгруппирован по доработкам вместо 18–21 мелких коммитов:
+2026-10-12: слой сгруппирован по доработкам:
 
 | Коммит `personal` | Что внутри |
 |---|---|
@@ -33,19 +33,19 @@ upstream накатывается одной операцией `git rebase`, а
 | `feat(company)` | company-wide префикс инструкций + caveman-ultra, миграции `0335`/`0336`, skills-catalog, `AGENTS.md` |
 | `chore(local)` | `doc/local/*`, дополнение SPEC, переномеровка миграций `0334`–`0336` и регенерированные snapshot'ы, lockfile |
 
-Так `git sync` проходит 4 «раунда» вместо 20: меньше конфликтов и читаемая
+Так `git sync` проходит меньше «раундов»: меньше конфликтов и читаемая
 история. Все файлы миграций и их журнал лежат в `chore(local)`, поэтому каждый
 коммит слоя согласован по нумерации миграций (`check:migrations` проходит на
 любом из них); источник истины — вершина `personal`.
 
 ## 2. Раскладка веток и PR
 
-Сейчас 7 локальных веток.
+Локальные ветки:
 
 | Ветка | Роль | PR | Что содержит |
 |---|---|---|---|
 | `master` | зеркало `upstream/master` | — | ванильный upstream, ничего своего |
-| `personal` | личный слой (4 коммита) | — | объединение всего; из неё ставится сервер |
+| `personal` | личный слой | — | объединение всего; из неё ставится сервер |
 | `feat/opencode-v2-support` | OpenCode V2 (direct adapter + runner) | **#15715** | adapter V2, runner `OpenCodeApiClient` V1/V2, config reload, MCP, projection, connections, pins/docs |
 | `feat/deepseek-first-class-provider` | DeepSeek как first-class провайдер | **#15585** | shared/server/ui + миграция provider CHECK |
 | `feat/opencode-gateway-canonical` | gateway `opencode_gateway` | — (PR позже) | HTTP/SSE adapter + wizard + registry + no-auth/free-model lists |
@@ -55,10 +55,10 @@ upstream накатывается одной операцией `git rebase`, а
 Рабочие каталоги (worktrees) — по одному на задачу:
 
 ```
-D:/_DEV/_PAPERCLIP/paperclip            [master]
-D:/_DEV/_PAPERCLIP/paperclip-personal   [personal]
-D:/_DEV/_PAPERCLIP/paperclip-opencode   [feat/opencode-v2-support]        -> PR #15715
-D:/_DEV/_PAPERCLIP/paperclip-pr15585    [feat/deepseek-first-class-provider] -> PR #15585
+<каталог-зеркала>            [master]
+<каталог-personal>           [personal]
+<каталог-opencode>           [feat/opencode-v2-support]        -> PR #15715
+<каталог-pr15585>            [feat/deepseek-first-class-provider] -> PR #15585
 ```
 
 `feat/opencode-gateway-canonical`, `fix/windows-opencode-utf8` и
@@ -87,7 +87,7 @@ D:/_DEV/_PAPERCLIP/paperclip-pr15585    [feat/deepseek-first-class-provider] -> 
 wizard`). Коммит лежит в `personal` и cherry-pick'нут в
 `feat/opencode-gateway-canonical`.
 
-2026-10-12: `git sync` на upstream `1b4c80381`; слой сжат до 4 коммитов; свои
+2026-10-12: `git sync` на upstream `1b4c80381`; слой сжат; свои
 миграции переномерованы (`0334`–`0336`), snapshot'ы перегенерированы. Теги
 `backup/*` после проверки удалены (см. раздел 8). В тот же день все три
 PR-ветки перебазированы на свежий `master` (PR #15715, #15585, #15921),
@@ -147,15 +147,15 @@ cd paperclip && pnpm install && pnpm build
 
 ```sh
 git fetch upstream
-git -C D:/_DEV/_PAPERCLIP/paperclip          merge --ff-only upstream/master  # зеркало
-git -C D:/_DEV/_PAPERCLIP/paperclip-personal rebase master                     # твой слой
+git -C <каталог-зеркала>  merge --ff-only upstream/master  # зеркало
+git -C <каталог-personal> rebase master                    # твой слой
 ```
 
 Алиас для одной команды (переопредели, старый одно-деревьевый вариант здесь не
 работает):
 
 ```sh
-git config alias.sync '!git fetch upstream && git -C D:/_DEV/_PAPERCLIP/paperclip merge --ff-only upstream/master && git -C D:/_DEV/_PAPERCLIP/paperclip-personal rebase master'
+git config alias.sync '!git fetch upstream && git -C <каталог-зеркала> merge --ff-only upstream/master && git -C <каталог-personal> rebase master'
 ```
 
 ## 5. Публикация в форк
@@ -194,7 +194,6 @@ git config rerere.autoupdate true
 
 Оба репозитория могут создать миграцию с одним номером. Правило: номера
 upstream фиксированы, **свою** миграцию переномеруй в первый свободный.
-Актуально: upstream занимает по `0333`, свои — `0334`–`0336`.
 
 Переименования **недостаточно**. `_journal.json` и `*_snapshot.json` помечены в
 `packages/db/.gitattributes` как `-diff -merge`: их нельзя мёржить текстом, а при
@@ -254,7 +253,7 @@ git push origin <коммит>:refs/heads/<имя>      # обратно на or
 
 ```sh
 git reflog
-git reset --hard 17b1e2d83   # personal до сжатия слоя (21 коммит)
+git reset --hard 17b1e2d83   # personal до сжатия слоя
 git reset --hard 1f5b14ee1   # personal до синка (исходный слой)
 ```
 
@@ -266,8 +265,8 @@ git reset --hard 1f5b14ee1   # personal до синка (исходный сло
 - **`master` показывает `ahead/behind origin`** — это нормально, если ты обновил
   зеркало, но ещё не запушил. Отправь зеркало (раздел 5).
 - **В `master` «пропали» мои правки** — их там и не должно быть. Они в `personal`
-  (4 сгруппированных коммита) и в рабочих `feat/*`. Смотри
-  `git -C D:/_DEV/_PAPERCLIP/paperclip-personal log --oneline master..personal`.
+  (сгруппирован по доработкам) и в рабочих `feat/*`. Смотри
+  `git -C <каталог-personal> log --oneline master..personal`.
 - **Никогда не коммить в `master`** — только `git merge --ff-only upstream/master`.
   Свой код — только в `personal` или в рабочую `feat/*`.
 - **Установка/деплой — только из `personal`** (раздел 3). Из `master` ставится
@@ -298,7 +297,7 @@ git reset --hard 1f5b14ee1   # personal до синка (исходный сло
 ```sh
 git merge-base --is-ancestor upstream/master master   # master = актуальное зеркало
 git merge-base --is-ancestor master personal          # master является базой personal
-git log --oneline master..personal                    # ровно твой слой: 4 коммита
-git -C D:/_DEV/_PAPERCLIP/paperclip-personal rebase master   # сразу после sync: "up to date"
-git branch -vv                                        # master, personal, 3 feat/*, fix/windows-opencode-utf8, jev/typesafe-13713
+git log --oneline master..personal                    # ровно твой слой
+git -C <каталог-personal> rebase master   # сразу после sync: "up to date"
+git branch -vv                                        # master, personal, feat/*, fix/windows-opencode-utf8, jev/typesafe-13713
 ```
