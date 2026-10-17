@@ -59,6 +59,7 @@ export interface AdapterConfigFieldsProps {
    * and password inputs and only needs the remaining schema fields).
    */
   omitSchemaKeys?: string[];
+  hideRunnerHarness?: boolean;
 }
 
 export interface UIAdapterModule extends TranscriptParserSource {

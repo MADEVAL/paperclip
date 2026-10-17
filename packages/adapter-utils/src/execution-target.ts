@@ -1,3 +1,4 @@
+import type { WorkspaceCheckpointMetrics } from "./workspace-checkpoint.js";
 import fs from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -45,6 +46,7 @@ import {
   startSandboxCallbackBridgeServer,
   startSandboxCallbackBridgeWorker,
   syncRemoteTextFileWithHashSkip,
+  syncRemoteTextFilesWithHashSkip,
   syncSandboxCallbackBridgeEntrypoint,
 } from "./sandbox-callback-bridge.js";
 import {
@@ -267,6 +269,7 @@ export interface PreparedAdapterExecutionTargetRuntime {
   workspaceSyncSnapshot: {
     baseline: DirectorySnapshot;
     gitSnapshot: GitWorkspaceSnapshot | null;
+    repositories?: NonNullable<GitWorkspaceSnapshot["repositories"]>;
   } | null;
   cleanupWorkspaceSnapshot?(): Promise<void>;
   restoreWorkspace(onProgress?: RuntimeProgressSink): Promise<void>;
@@ -1437,11 +1440,16 @@ export async function prepareAdapterExecutionTargetRuntime(input: {
   runtimeRootDir?: string;
   syncWorkspace?: boolean;
   workspaceInboundMode?: WorkspaceInboundMode;
+  workspaceSnapshotIsolation?: "worker";
   workspaceDurableSeed?: WorkspaceDurableSeedPaths;
+  workspaceCheckpoint?: boolean;
+  onWorkspaceCheckpoint?: (metrics: WorkspaceCheckpointMetrics) => Promise<void>;
+  workspaceSeedCacheDirectory?: string;
+  workspaceSeedCacheCompanyDirectory?: string;
   workspaceBaseline?: DirectorySnapshot;
   workspaceGitSnapshot?: GitWorkspaceSnapshot | null;
+  workspaceRepositories?: NonNullable<GitWorkspaceSnapshot["repositories"]>;
   workspaceExclude?: string[];
-  /** Plain persistent directories include all files, independent of Git and task cache exclusions. */
   workspaceFileMode?: "all";
   preserveAbsentOnRestore?: string[];
   assets?: AdapterManagedRuntimeAsset[];
@@ -1527,9 +1535,15 @@ export async function prepareAdapterExecutionTargetRuntime(input: {
     runtimeRootDir: input.runtimeRootDir,
     syncWorkspace: input.syncWorkspace,
     workspaceInboundMode: input.workspaceInboundMode,
+    workspaceSnapshotIsolation: input.workspaceSnapshotIsolation,
     workspaceDurableSeed: input.workspaceDurableSeed,
+    workspaceCheckpoint: input.workspaceCheckpoint,
+    onWorkspaceCheckpoint: input.onWorkspaceCheckpoint,
+    workspaceSeedCacheDirectory: input.workspaceSeedCacheDirectory,
+    workspaceSeedCacheCompanyDirectory: input.workspaceSeedCacheCompanyDirectory,
     workspaceBaseline: input.workspaceBaseline,
     workspaceGitSnapshot: input.workspaceGitSnapshot,
+    workspaceRepositories: input.workspaceRepositories,
     workspaceExclude: input.workspaceExclude,
     workspaceFileMode: input.workspaceFileMode,
     preserveAbsentOnRestore: input.preserveAbsentOnRestore,
@@ -1757,17 +1771,17 @@ export async function prepareGitHubOperationLaunchers(input: {
   ]);
   if (remote) {
     const runner = adapterExecutionTargetCommandRunner(remote);
-    for (const [program, body] of Object.entries(files)) {
-      await syncRemoteTextFileWithHashSkip({
-        runner, remoteCwd: remote.remoteCwd, remoteDir: directory,
-        remotePath: path.posix.join(directory, program), body,
+    await syncRemoteTextFilesWithHashSkip({
+      runner, remoteCwd: remote.remoteCwd,
+      files: Object.entries(files).map(([program, body]) => ({
+        remoteDir: directory, remotePath: path.posix.join(directory, program), body,
         label: "GitHub operation launcher", action: "stage GitHub operation launcher",
         lockDir: path.posix.join(directory, `.${program}.lock`),
-        timeoutMs: 15_000, shellCommand: adapterExecutionTargetShellCommand(remote),
-      });
-    }
-    const permissions = await runner.execute({ command: "sh", args: ["-c", `chmod 700 ${shellQuote(directory)}/git ${shellQuote(directory)}/gh && mkdir -p ${shellQuote(configDirectory)}`], cwd: remote.remoteCwd, timeoutMs: 15_000 });
-    if (permissions.exitCode !== 0) throw new Error("Could not prepare managed GitHub launchers");
+        executable: program === "git" || program === "gh",
+      })),
+      ensureDirectories: [configDirectory], action: "stage GitHub operation launchers",
+      timeoutMs: 15_000, shellCommand: adapterExecutionTargetShellCommand(remote),
+    });
   } else {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
     await fs.mkdir(configDirectory, { recursive: true, mode: 0o700 });

@@ -244,6 +244,8 @@ impl AcpxSidecarTransport {
             // The qualified sidecar configures the runner-owned gateway. Keep
             // its credential with the name/URL; unrelated secrets stay excluded.
             "PAPERCLIP_NATIVE_MCP_TOKEN",
+            "PAPERCLIP_NATIVE_MCP_STDIO",
+            "PAPERCLIP_NATIVE_MCP_PROXY",
             "PAPERCLIP_ACPX_BUILTIN_ROOT",
             "PAPERCLIP_ACPX_PROVIDER_PACKAGE_ROOT",
             "PAPERCLIP_ACPX_PROVIDER_PACKAGE_MANIFEST",
@@ -278,6 +280,17 @@ impl AcpxSidecarTransport {
             Vec::new()
         };
         keys.extend(pi_keys.iter().map(String::as_str));
+        if std::env::var("PAPERCLIP_RUNNER_HOME_MODE").as_deref() == Ok("preconfigured") {
+            keys.extend_from_slice(&[
+                "PAPERCLIP_RUNNER_HOME_MODE",
+                "ACPX_CLAUDE_INCLUDE_USER_SETTINGS",
+                "CODEX_HOME",
+                "CLAUDE_CONFIG_DIR",
+                "XDG_CONFIG_HOME",
+                "XDG_DATA_HOME",
+                "XDG_CACHE_HOME",
+            ]);
+        }
         keys.extend_from_slice(credential_keys);
         // Pi owns a native distribution copy, including a pending refresh at
         // suspension. Allow its bounded cleanup to settle before group KILL;
@@ -844,6 +857,7 @@ fn stderr_diagnostic_categories(value: &str) -> BTreeSet<&'static str> {
 
 fn response_error_classification(error: &ResponseError) -> &'static str {
     match error.code.as_str() {
+        "ACPX_RUNTIME_PACKAGE_MISSING" => return "runtime_package_missing",
         "ACP_MODEL_UNSUPPORTED" => return "requested_model_unsupported",
         "AGENT_STARTUP_FAILED" => return "agent_startup_failed",
         "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE" => return "agent_startup_unverified_module",
@@ -1038,6 +1052,7 @@ mod tests {
     #[test]
     fn candidate_auth_diagnostics_use_only_closed_codes_and_never_provider_text() {
         for (code, expected) in [
+            ("ACPX_RUNTIME_PACKAGE_MISSING", "runtime_package_missing"),
             ("ACPX_TOOL_CALL_STALE", "provider_tool_call_retired"),
             ("ACPX_TOOL_CALL_STALE_EXTRA", "unclassified"),
             ("COPILOT_AUTH_REQUIRED", "authentication_required"),

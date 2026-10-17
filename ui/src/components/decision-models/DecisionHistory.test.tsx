@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { DecisionHistoryTable } from "./DecisionHistory";
-import { entry } from "../../../storybook/stories/decision-models/fixtures";
+import { entry } from "../../../storybook/support/decision-models/fixtures";
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompany: { issuePrefix: "ACM" } }),

@@ -32,12 +32,12 @@
       ],
       "whenToUse": "Use DeepSeek models with an API key.",
       "guidanceMd": "Use your personal account or an explicitly shared company account.",
+      "riskTier": "S3",
       "consoleLinks": {
         "register": "https://platform.deepseek.com/sign_up",
         "keys": "https://platform.deepseek.com/api_keys",
         "docs": "https://api-docs.deepseek.com"
       },
-      "riskTier": "S3",
       "credentialFields": [
         {
           "key": "apiKey",
