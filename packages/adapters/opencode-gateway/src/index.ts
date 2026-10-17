@@ -1,7 +1,11 @@
-import type { AdapterSessionManagement, ServerAdapterModule } from "@paperclipai/adapter-utils";
+import type { AdapterModel, AdapterSessionManagement, ServerAdapterModule } from "@paperclipai/adapter-utils";
 import { ADAPTER_LABEL, ADAPTER_TYPE, ALLOW_UNQUALIFIED_VERSION_ENV } from "./shared/constants.js";
 import { execute, getConfigSchema, sessionCodec, testEnvironment } from "./server/index.js";
-import { catalogToAdapterModels, FALLBACK_OPENCODE_MODELS } from "./server/free-models.js";
+import {
+  catalogToAdapterModels,
+  FALLBACK_OPENCODE_MODELS,
+  loadOpenCodeModelCatalog,
+} from "./server/free-models.js";
 
 export { createOpenCodeApiClient, formFieldsToQuestions } from "./server/index.js";
 
@@ -9,13 +13,24 @@ export const type = ADAPTER_TYPE;
 export const label = ADAPTER_LABEL;
 
 /**
- * The gateway owns the provider catalog, so Paperclip cannot enumerate the
- * models of an arbitrary running server. The static list is the offline
- * fallback of known free OpenCode Zen / Go models; the create form's model
- * combobox loads the live catalog (see `getConfigSchema`). The operator can
- * always type any `provider/model`.
+ * Static last-resort list. Every create/edit surface that can enumerate models
+ * uses `listModels`/`refreshModels` below or `getConfigSchema`; this list only
+ * keeps a dropdown useful when the public catalog is unreachable.
  */
 export const models: { id: string; label: string }[] = catalogToAdapterModels(FALLBACK_OPENCODE_MODELS);
+
+/**
+ * Live Zen/Go catalog in the shape the adapter model endpoint expects. Unlike
+ * `models`, this includes new free models without a Paperclip release.
+ */
+export async function listOpenCodeGatewayCatalogModels(): Promise<AdapterModel[]> {
+  return catalogToAdapterModels(await loadOpenCodeModelCatalog());
+}
+
+/** Force a catalog refetch for the model dropdown's Refresh action. */
+export async function refreshOpenCodeGatewayCatalogModels(): Promise<AdapterModel[]> {
+  return catalogToAdapterModels(await loadOpenCodeModelCatalog({ force: true }));
+}
 
 const sessionManagement: AdapterSessionManagement = {
   supportsSessionResume: true,
@@ -89,10 +104,13 @@ Optional fields:
   default. Enables non-loopback plain HTTP.
 
 Models:
-- The model field is a combobox loaded from the public OpenCode Zen and OpenCode
-  Go catalogs (https://opencode.ai/zen/v1/models and .../zen/go/v1/models).
-  Free models are labelled "(free)". Any provider/model can be typed manually.
-  A model works only if the gateway host has that provider connected.
+- Every create and edit surface loads the public OpenCode Zen and OpenCode Go
+  catalogs (https://opencode.ai/zen/v1/models and .../zen/go/v1/models), enriched
+  with zero-cost metadata from https://models.dev/api.json. Free models are
+  labelled "(free)", including stealth releases without a -free suffix. The
+  catalog is cached for 30 minutes and can be force-refreshed. Any provider/model
+  can be typed manually. A model works only if the gateway host has that provider
+  connected.
 
 Protocol mapping:
 - V1 (opencode-ai 1.x): GET /global/health, POST /session,
@@ -134,6 +152,8 @@ export function createServerAdapter(): ServerAdapterModule {
     sessionCodec,
     sessionManagement,
     models,
+    listModels: listOpenCodeGatewayCatalogModels,
+    refreshModels: refreshOpenCodeGatewayCatalogModels,
     supportsLocalAgentJwt: false,
     supportsInstructionsBundle: false,
     requiresMaterializedRuntimeSkills: false,

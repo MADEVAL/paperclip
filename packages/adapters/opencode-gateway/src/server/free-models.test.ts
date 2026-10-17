@@ -6,6 +6,7 @@ import {
   isFreeModelId,
   loadOpenCodeModelCatalog,
   parseModelCatalog,
+  parseZeroCostModelIds,
   resetOpenCodeModelCatalogCacheForTests,
 } from "./free-models.js";
 
@@ -66,6 +67,28 @@ describe("loadOpenCodeModelCatalog", () => {
     expect(models.some((model) => model.id === "opencode/big-pickle" && model.free)).toBe(true);
     // Free models sort before paid ones regardless of provider.
     expect(models[0]!.free).toBe(true);
+  });
+
+  it("uses models.dev zero-cost metadata to mark stealth free models", async () => {
+    resetOpenCodeModelCatalogCacheForTests();
+    expect(parseZeroCostModelIds({
+      opencode: { models: { "stealth-new": { cost: { input: 0, output: 0 } }, paid: { cost: { input: 1, output: 2 } } } },
+      "opencode-go": { models: {} },
+    })).toEqual(new Set(["stealth-new"]));
+    const fetchImpl = (async (request: RequestInfo | URL) => {
+      const url = String(request);
+      if (url.includes("models.dev")) {
+        return new Response(JSON.stringify({
+          opencode: { models: { "stealth-new": { cost: { input: 0, output: 0 } }, paid: { cost: { input: 1, output: 2 } } } },
+          "opencode-go": { models: {} },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ data: [{ id: "stealth-new" }, { id: "paid" }] }), { status: 200 });
+    }) as typeof fetch;
+
+    const models = await loadOpenCodeModelCatalog({ fetchImpl, force: true });
+    expect(models.find((model) => model.id === "opencode/stealth-new")?.free).toBe(true);
+    expect(models.find((model) => model.id === "opencode/paid")?.free).toBe(false);
   });
 
   it("falls back to the baked list when every fetch fails", async () => {

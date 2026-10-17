@@ -81,17 +81,29 @@ See `agentConfigurationDoc` (exported from the package root) and the schema from
 
 ## Models and free models
 
-The gateway owns the provider catalog, so Paperclip does not enumerate it. To
-make model choice real, the `model` field is a **combobox** whose options are
-loaded from OpenCode's public catalogs at connection time:
+The gateway owns provider credentials, but the **model choices** come from
+OpenCode's public catalogs. Every create and edit surface uses the same live
+catalog:
+
+- the create-agent wizard (through the adapter `/models` endpoint),
+- the schema-driven edit form (through `getConfigSchema`),
+- the built-in agent setup dialog.
+
+Sources:
 
 - OpenCode Zen: `https://opencode.ai/zen/v1/models` → `opencode/<id>`
 - OpenCode Go: `https://opencode.ai/zen/go/v1/models` → `opencode-go/<id>`
+- `https://models.dev/api.json` for zero-cost metadata.
 
-Free models are labelled `(free)` (the `-free` suffix plus the `big-pickle`
-stealth id). Any `provider/model` can still be typed manually. The list is
-cached for 6 hours, never throws, and falls back to a baked-in set of known free
-models when the network is unavailable.
+Free models are labelled `(free)` using the `-free` suffix, the `big-pickle` /
+`grok-code` stealth ids, and `models.dev` entries whose input and output cost is
+zero. A new stealth free model therefore does not need a Paperclip release.
+
+The live catalog is cached for 30 minutes. `refresh=1` on the adapter model
+endpoint and the Refresh action in the create wizard bypass that cache. The list
+never throws: if every network request fails it falls back to a baked-in set of
+known free models. Any `provider/model` can still be typed manually, and the
+gateway host must have that provider connected (`opencode auth` / `/connect`).
 
 A selected model runs only if the gateway host has that provider connected
 (`opencode auth` / `/connect`). Paperclip never sees or manages those

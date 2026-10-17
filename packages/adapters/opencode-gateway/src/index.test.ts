@@ -3,7 +3,9 @@ import {
   agentConfigurationDoc,
   createServerAdapter,
   label,
+  listOpenCodeGatewayCatalogModels,
   models,
+  refreshOpenCodeGatewayCatalogModels,
   type as adapterType,
 } from "./index.js";
 import { getConfigSchema } from "./server/config-schema.js";
@@ -26,6 +28,8 @@ describe("opencode_gateway package exports", () => {
     expect(typeof adapter.execute).toBe("function");
     expect(typeof adapter.testEnvironment).toBe("function");
     expect(typeof adapter.getConfigSchema).toBe("function");
+    expect(adapter.listModels).toBe(listOpenCodeGatewayCatalogModels);
+    expect(adapter.refreshModels).toBe(refreshOpenCodeGatewayCatalogModels);
     expect(adapter.sessionCodec).toBeDefined();
     expect(adapter.sessionManagement?.supportsSessionResume).toBe(true);
     expect(adapter.supportsLocalAgentJwt).toBe(false);

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   FALLBACK_OPENCODE_FREE_MODELS,
   isFreeOpenCodeModelId,
+  loadOpenCodeFreeModelData,
   loadOpenCodeFreeModels,
   mergeFreeModels,
   parseFreeModelCatalog,
+  parseZeroCostModelIds,
   resetOpenCodeFreeModelCacheForTests,
 } from "./free-models.js";
 
@@ -65,6 +67,29 @@ describe("loadOpenCodeFreeModels", () => {
     expect(models.some((model) => model.id === "opencode/big-pickle")).toBe(true);
     expect(models.some((model) => model.id === "opencode-go/step-5-preview-free")).toBe(true);
     expect(models.some((model) => model.id === "opencode/gpt-5.2")).toBe(false);
+  });
+
+  it("uses models.dev zero-cost metadata to mark stealth free models", async () => {
+    resetOpenCodeFreeModelCacheForTests();
+    expect(parseZeroCostModelIds({
+      opencode: { models: { "stealth-new": { cost: { input: 0, output: 0 } }, paid: { cost: { input: 1, output: 2 } } } },
+      "opencode-go": { models: {} },
+    })).toEqual(new Set(["stealth-new"]));
+    const fetchImpl = (async (request: RequestInfo | URL) => {
+      const url = String(request);
+      if (url.includes("models.dev")) {
+        return new Response(JSON.stringify({
+          opencode: { models: { "stealth-new": { cost: { input: 0, output: 0 } } } },
+          "opencode-go": { models: {} },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ data: [{ id: "stealth-new" }, { id: "paid" }] }), { status: 200 });
+    }) as typeof fetch;
+
+    const data = await loadOpenCodeFreeModelData({ fetchImpl, force: true });
+    expect(data.models.some((model) => model.id === "opencode/stealth-new")).toBe(true);
+    expect(data.models.some((model) => model.id === "opencode/paid")).toBe(false);
+    expect(data.zeroCostIds.has("stealth-new")).toBe(true);
   });
 
   it("falls back to the baked list on failure", async () => {

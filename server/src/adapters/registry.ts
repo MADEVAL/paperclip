@@ -106,6 +106,9 @@ import {
   testEnvironment as openCodeTestEnvironment,
   sessionCodec as openCodeSessionCodec,
   listOpenCodeModels,
+  refreshOpenCodeModels,
+  loadOpenCodeFreeModelData,
+  mergeFreeModels,
 } from "@paperclipai/adapter-opencode-local/server";
 import {
   agentConfigurationDoc as openCodeAgentConfigurationDoc,
@@ -127,7 +130,9 @@ import {
 } from "@paperclipai/adapter-opencode-gateway/server";
 import {
   agentConfigurationDoc as openCodeGatewayAgentConfigurationDoc,
+  listOpenCodeGatewayCatalogModels,
   models as openCodeGatewayModels,
+  refreshOpenCodeGatewayCatalogModels,
 } from "@paperclipai/adapter-opencode-gateway";
 import { listCodexModels, refreshCodexModels } from "./codex-models.js";
 import { listCursorModels } from "./cursor-models.js";
@@ -861,6 +866,8 @@ const openCodeGatewayAdapter: ServerAdapterModule = {
   testEnvironment: openCodeGatewayTestEnvironment,
   sessionCodec: openCodeGatewaySessionCodec,
   models: openCodeGatewayModels,
+  listModels: listOpenCodeGatewayCatalogModels,
+  refreshModels: refreshOpenCodeGatewayCatalogModels,
   supportsLocalAgentJwt: false,
   supportsInstructionsBundle: false,
   requiresMaterializedRuntimeSkills: false,
@@ -880,6 +887,7 @@ const openCodeLocalAdapter: ServerAdapterModule = {
   sessionManagement: getAdapterSessionManagement("opencode_local") ?? undefined,
   supportsToolRefreshOnResume: true,
   listModels: listOpenCodeModels,
+  refreshModels: refreshOpenCodeModels,
   supportsLocalAgentJwt: true,
   supportsInstructionsBundle: true,
   instructionsPathKey: "instructionsFilePath",
@@ -1137,6 +1145,15 @@ export async function refreshAdapterModels(type: string): Promise<{ id: string; 
     if (discovered.length > 0) return discovered;
   }
   return adapter.models ?? [];
+}
+
+/**
+ * A non-local environment cannot run `opencode models` on this host, so keep
+ * the curated host-independent list and refresh only its public free portion.
+ */
+export async function listOpenCodeModelsForRemoteEnvironment() {
+  const free = await loadOpenCodeFreeModelData();
+  return mergeFreeModels(openCodeModels, free.models, free.zeroCostIds);
 }
 
 export function listServerAdapters(): ServerAdapterModule[] {

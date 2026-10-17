@@ -7,7 +7,7 @@ import {
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import { isValidOpenCodeModelId } from "../index.js";
-import { loadOpenCodeFreeModels, mergeFreeModels } from "./free-models.js";
+import { loadOpenCodeFreeModelData, mergeFreeModels } from "./free-models.js";
 
 const MODELS_CACHE_TTL_MS = 60_000;
 const MODELS_DISCOVERY_TIMEOUT_MS = 20_000;
@@ -364,11 +364,26 @@ export async function ensureOpenCodeModelConfiguredAndAvailable(input: {
 }
 
 export async function listOpenCodeModels(): Promise<AdapterModel[]> {
-  const [discovered, freeModels] = await Promise.all([
+  const [discovered, free] = await Promise.all([
     discoverOpenCodeModelsCached().catch(() => [] as AdapterModel[]),
-    loadOpenCodeFreeModels(),
+    loadOpenCodeFreeModelData(),
   ]);
-  return mergeFreeModels(discovered, freeModels);
+  return mergeFreeModels(discovered, free.models, free.zeroCostIds);
+}
+
+/**
+ * Force-refresh both halves of the picker: OpenCode's own model cache and the
+ * public free catalog. Used by the model dropdown's Refresh action so a newly
+ * released free model does not wait for the catalog TTL.
+ */
+export async function refreshOpenCodeModels(): Promise<AdapterModel[]> {
+  const [discovered, free] = await Promise.all([
+    refreshOpenCodeModelsCached({}).catch(async () =>
+      discoverOpenCodeModelsCached().catch(() => [] as AdapterModel[]),
+    ),
+    loadOpenCodeFreeModelData({ force: true }),
+  ]);
+  return mergeFreeModels(discovered, free.models, free.zeroCostIds);
 }
 
 export function resetOpenCodeModelsCacheForTests() {
