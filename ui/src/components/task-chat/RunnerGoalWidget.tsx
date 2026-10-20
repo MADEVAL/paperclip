@@ -9,6 +9,7 @@ import type {
 import { issuesApi } from "@/api/issues";
 import { useCompanyLiveEvent } from "@/context/LiveUpdatesProvider";
 import { queryKeys } from "@/lib/queryKeys";
+import { createUuid } from "@/lib/uuid";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,9 +27,7 @@ const PENDING_LABELS: Record<string, string> = {
 };
 
 function requestId() {
-  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `goal_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  return createUuid();
 }
 
 function formatDuration(seconds: number) {

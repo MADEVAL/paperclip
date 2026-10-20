@@ -1,3 +1,4 @@
+import { createUuid } from "@/lib/uuid";
 import { resolveIssueChatHumanAuthor } from "@/lib/issue-chat-human-author";
 import { useWorkspaceBaseRefRecovery } from "./WorkspaceBaseRefRecovery";
 import { WorkspaceBaseRefRecoveryNotice } from "./WorkspaceBaseRefRecoveryNotice";
@@ -5051,7 +5052,7 @@ const IssueChatComposer = forwardRef<
         setBody(trimmed);
         return;
       }
-      attemptId = crypto.randomUUID();
+      attemptId = createUuid();
       if (draftKey) {
         saveDraft(draftKey, trimmed);
         saveDraftSubmission(draftKey, { attemptId, reviewed: false });
