@@ -27,8 +27,9 @@ export async function resolveConfirmationFromComment(db: Db, args: {
   let publication: ActivityPublication | null = null;
   const commitEffects: Array<(committedDb: Db) => Promise<void>> = [];
   // A plan gate runs before the resolution transaction so the provider call never
-  // runs while issue/interaction rows are locked. Fail-open: an unavailable
-  // decision model returns `proceed` and changes nothing. Covers the agent
+  // runs while issue/interaction rows are locked. An unavailable decision model
+  // returns `proceed` inside gatePlan; any other failure propagates so an
+  // authorization error cannot silently skip the gate. Covers the agent
   // conversation-reply accept, which the HTTP route does not.
   const [preCard] = await db.select().from(issueThreadInteractions).where(and(
     eq(issueThreadInteractions.id, args.interactionId),
@@ -41,7 +42,7 @@ export async function resolveConfirmationFromComment(db: Db, args: {
   const isPlanTarget = preCard?.kind === "request_confirmation" && preTarget?.type === "issue_document" && preTarget?.key === "plan";
   const planGate = input.decision === "accept" && isPlanTarget
     ? await gatePlan(db, { companyId: args.companyId, issueId: args.issueId,
-        actor: { type: "agent", agentId: args.actor.agentId, runId: args.actor.runId, companyId: args.companyId, source: "agent_jwt" } }).catch(() => null)
+        actor: { type: "agent", agentId: args.actor.agentId, runId: args.actor.runId, companyId: args.companyId, source: "agent_jwt" } })
     : null;
   const result = await db.transaction(async (transaction) => {
     const tx = transaction as unknown as Db;

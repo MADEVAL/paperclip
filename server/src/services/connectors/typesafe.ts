@@ -1,9 +1,12 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { toolConnectionInstalls, toolConnections } from "@paperclipai/db";
+import { agents, connectionGrants, decisionInvocations, issues, toolConnectionInstalls, toolConnections } from "@paperclipai/db";
 import { isTypesafePurposeAllowed, typesafeAskSchema, TYPESAFE_PURPOSE_IDS, type TypesafeAskResult } from "@paperclipai/shared";
 import { HttpError, badRequest, forbidden, unprocessable } from "../../errors.js";
 import { logActivity } from "../activity-log.js";
+import { createCostEventInTransaction } from "../costs.js";
+import { decisionReceipt } from "../decision-model-provider.js";
 import { secretService } from "../secrets.js";
 import { toolAccessPolicyService } from "../tool-access-policy.js";
 import {
@@ -74,6 +77,100 @@ type AskBinding = AgentBinding & {
 };
 
 const API_KEY_PATH = "credentials.apiKey";
+
+/**
+ * The agent-side `typesafe_ask` path bypasses the company decision model, so it
+ * must record its own invocation and cost event. Metadata only: the state,
+ * questions, and answers never reach the ledger.
+ */
+async function recordTypesafeAskAccounting(
+  db: Db,
+  input: {
+    companyId: string;
+    agentId: string;
+    runId: string | null;
+    issueId: string | null;
+    connectionId: string;
+    purpose: string | null;
+    model: string;
+    questionTypes: string[];
+    usage: { input_tokens?: number | null; output_tokens?: number | null } | null | undefined;
+    startedAt: Date;
+  },
+) {
+  try {
+    const receipt = decisionReceipt("typesafe", {
+      usage: { inputTokens: input.usage?.input_tokens ?? null, outputTokens: input.usage?.output_tokens ?? null },
+    });
+    await db.transaction(async (tx) => {
+      const [grant] = await tx.select({ id: connectionGrants.id }).from(connectionGrants).where(and(
+        eq(connectionGrants.companyId, input.companyId),
+        eq(connectionGrants.connectionId, input.connectionId),
+        eq(connectionGrants.status, "active"),
+      )).orderBy(desc(connectionGrants.isDefault)).limit(1);
+      if (!grant) return;
+      // Ledger foreign keys point at live rows only.
+      const [agent] = await tx.select({ id: agents.id }).from(agents).where(and(
+        eq(agents.id, input.agentId), eq(agents.companyId, input.companyId),
+      ));
+      const [issue] = input.issueId
+        ? await tx.select({ id: issues.id }).from(issues).where(and(
+          eq(issues.id, input.issueId), eq(issues.companyId, input.companyId),
+        ))
+        : [];
+      const invocationId = randomUUID();
+      const event = await createCostEventInTransaction(tx as unknown as Db, input.companyId, {
+        usageKind: "decision",
+        responsibleUserId: null,
+        agentId: agent?.id ?? null,
+        issueId: issue?.id ?? null,
+        projectId: null,
+        heartbeatRunId: null,
+        idempotencyKey: `typesafe-ask:${invocationId}`,
+        provider: "typesafe",
+        biller: "typesafe",
+        billingType: "metered_api",
+        costStatus: receipt.costStatus,
+        model: input.model,
+        inputTokens: receipt.inputTokens ?? 0,
+        outputTokens: receipt.outputTokens ?? 0,
+        costCents: receipt.costCents ?? "0",
+        providerRequestId: receipt.providerRequestId,
+        pricingProvenance: receipt.pricingProvenance,
+        occurredAt: input.startedAt,
+      }, [], { actorType: "agent", actorId: input.agentId, agentId: agent?.id ?? null });
+      await tx.insert(decisionInvocations).values({
+        id: invocationId,
+        companyId: input.companyId,
+        feature: "typesafe.ask",
+        actorType: "agent",
+        actorId: input.agentId,
+        responsibleUserId: null,
+        agentId: agent?.id ?? null,
+        issueId: issue?.id ?? null,
+        projectId: null,
+        runId: input.runId,
+        identityContextId: null,
+        connectionId: input.connectionId,
+        grantId: grant.id,
+        provider: "typesafe",
+        model: input.model,
+        questionTypes: input.questionTypes,
+        status: "succeeded",
+        errorCode: null,
+        providerRequestId: receipt.providerRequestId,
+        costEventId: event.id,
+        startedAt: input.startedAt,
+        finishedAt: new Date(),
+        durationMs: Math.max(0, Date.now() - input.startedAt.getTime()),
+        inputTokens: receipt.inputTokens,
+        outputTokens: receipt.outputTokens,
+      });
+    });
+  } catch {
+    // Accounting must never fail an otherwise successful ask.
+  }
+}
 
 export async function assignedTypesafeConnections(
   db: Db,
@@ -157,6 +254,8 @@ export async function executeTypesafeAsk(
       code: "typesafe_model_missing",
     });
   const questionCount = Object.keys(input.questions).length;
+  const questionTypes = [...new Set(Object.values(input.questions).map((question) => question.type))];
+  const startedAt = new Date();
 
   const policy = toolAccessPolicyService(db);
   const policyRequest = {
@@ -221,6 +320,18 @@ export async function executeTypesafeAsk(
   }
 
   // Usage only: state, instructions and answers may hold private task content.
+  await recordTypesafeAskAccounting(db, {
+    companyId: binding.companyId,
+    agentId: binding.agentId,
+    runId: binding.runId ?? null,
+    issueId: binding.issueId ?? null,
+    connectionId: connection.id,
+    purpose: input.purpose ?? null,
+    model,
+    questionTypes,
+    usage: result.usage,
+    startedAt,
+  });
   await logActivity(db, {
     companyId: binding.companyId,
     actorType: "agent",
@@ -234,6 +345,7 @@ export async function executeTypesafeAsk(
     details: {
       // The requested name: resolved versions such as jev-1.13.0 trip the JWT-shape redactor.
       model,
+      purpose: input.purpose ?? null,
       questionCount,
       inputTokens: result.usage.input_tokens,
       outputTokens: result.usage.output_tokens,

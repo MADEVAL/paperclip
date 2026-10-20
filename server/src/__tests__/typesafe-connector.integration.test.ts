@@ -6,7 +6,9 @@ import {
   activityLog,
   agents,
   companies,
+  costEvents,
   createDb,
+  decisionInvocations,
   heartbeatRuns,
   toolAccessAuditEvents,
   toolConnectionInstalls,
@@ -313,6 +315,31 @@ describeEmbeddedPostgres("TypeSafe connector", () => {
       questions: { urgent: { type: "noul", instructions: INSTRUCTIONS } },
     });
     expect(JSON.stringify(result)).not.toContain(KEY);
+    // Agent-side asks must land in the decision ledger and the cost ledger.
+    const invocations = await db.select().from(decisionInvocations).where(and(
+      eq(decisionInvocations.companyId, companyId),
+      eq(decisionInvocations.feature, "typesafe.ask"),
+    ));
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]).toMatchObject({
+      actorType: "agent",
+      agentId: first.id,
+      provider: "typesafe",
+      model: "jev-latest",
+      status: "succeeded",
+      inputTokens: 40,
+      outputTokens: 3,
+    });
+    expect(invocations[0]!.costEventId).toBeTruthy();
+    const [cost] = await db.select().from(costEvents).where(eq(costEvents.id, invocations[0]!.costEventId!));
+    expect(cost).toMatchObject({
+      usageKind: "decision",
+      provider: "typesafe",
+      model: "jev-latest",
+      inputTokens: 40,
+      outputTokens: 3,
+    });
+    expect(JSON.stringify(cost)).not.toContain(STATE);
   });
 
   it("lets a call override the model", async () => {

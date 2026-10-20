@@ -16965,12 +16965,13 @@ export function issueRoutes(
           "Remembered permission is only supported for tool reviews",
         );
       // A plan gate runs before the resolution transaction so the provider call
-      // never runs while issue/interaction rows are locked. Fail-open: an
-      // unavailable decision model returns `proceed` and changes nothing.
+      // never runs while issue/interaction rows are locked. An unavailable
+      // decision model returns `proceed` inside gatePlan; an authorization or
+      // infrastructure error must not silently bypass the gate, so it propagates.
       const planGate =
         current.kind === "request_confirmation" &&
         readAcceptedPlanConfirmationTarget(current.payload, issue.id)?.key === "plan"
-          ? await gatePlan(db, { companyId: issue.companyId, issueId: issue.id, actor: req.actor }).catch(() => null)
+          ? await gatePlan(db, { companyId: issue.companyId, issueId: issue.id, actor: req.actor })
           : null;
       const suppressPlanExecutionStart = planGate?.status === "gate";
       const resolutionActor = {
