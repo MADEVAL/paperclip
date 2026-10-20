@@ -2500,7 +2500,7 @@ export function heartbeatService(
       const persistedRouterPoolId = routerHasPersistedInput ? readNonEmptyString(parseObject(context.aiRouterSelection).poolId) : null;
       const preconfiguredHome = agent.adapterType === "paperclip_runner" && config.homeMode === "preconfigured";
       const requestedAiBinding = preconfiguredHome ? undefined : persistedRouterPoolId ? { mode: "router" as const, connectionId: persistedRouterPoolId } : agent.runtimeConfig?.aiConnection ? aiRuntimeConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
-      let aiBinding = requestedAiBinding?.mode === "router" ? undefined : requestedAiBinding;
+      let aiBinding: import("@paperclipai/shared").AiConnectionBinding | undefined = requestedAiBinding && requestedAiBinding.mode !== "router" && requestedAiBinding.mode !== "harness_login" ? requestedAiBinding : undefined;
       const originalAiIssueOverrides = issueAssigneeOverrides;
       if (requestedAiBinding?.mode === "router") {
         try {
@@ -2527,7 +2527,7 @@ export function heartbeatService(
           agent = { ...agent, adapterConfig: config };
           context.aiRouterSelection = selection;
           await db.update(heartbeatRuns).set({ contextSnapshot: sql`coalesce(${heartbeatRuns.contextSnapshot}, '{}'::jsonb) || ${JSON.stringify({ aiRouterTaskKey: context.aiRouterTaskKey, aiRouterSelection: selection })}::jsonb` }).where(eq(heartbeatRuns.id, run.id));
-          await appendRunEvent(run, { eventType: "lifecycle", stream: "system", level: "info", message: "Using task-pinned pool account", payload: { poolId: selection.poolId, memberId: selection.memberId, provider: aiBinding.provider, model: config.model, notes: selection.notes } });
+          await appendRunEvent(run, { eventType: "lifecycle", stream: "system", level: "info", message: "Using task-pinned pool account", payload: { poolId: selection.poolId, memberId: selection.memberId, provider: selection.binding.provider, model: config.model, notes: selection.notes } });
         } catch (error) {
           if (error instanceof AiConnectionPoolExhausted && !routerHasPersistedInput) {
             const now = new Date();

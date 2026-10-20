@@ -4,6 +4,7 @@ import {
   AI_CONNECTION_CAPABILITIES,
   aiConnectionBindingSchema,
   isAiConnectionCompatible,
+  isHarnessLoginCompatibleAdapter,
   type AiRuntimeConnectionBinding,
   type AiAuthMethod,
   type AiConnectionBinding,
@@ -98,12 +99,14 @@ export function AiConnectionField({
   // Keep the reopened agent's saved provider (or the account being repaired)
   // instead of falling back to the harness default and swapping providers.
   // If the saved provider no longer fits the harness, use the harness provider.
-  const savedProvider = value && value.mode !== "router" ? value.provider : undefined;
+  const savedProvider = value && value.mode !== "router" && value.mode !== "harness_login" ? value.provider : undefined;
   const activeProvider = [chosenProvider, reconnecting?.provider, savedProvider, provider]
     .find((candidate): candidate is AiProvider => Boolean(candidate && providerCandidates.includes(candidate)))
     ?? providerCandidates[0]
     ?? provider;
   const changeBinding = (next: AiRuntimeConnectionBinding) => {
+    // Harness login stores no credentials, so there is nothing to adopt.
+    if (next.mode === "harness_login") return onChange(next);
     if (legacy && !value) { if (!connecting) returnFocus.current = document.activeElement as HTMLElement; setPendingAdoption(next); }
     else onChange(next);
   };
@@ -137,12 +140,14 @@ export function AiConnectionField({
     selectDefault.reset();
     setConnecting(true);
   };
-  const method: AiAuthMethod = (value && value.mode !== "router" && value.mode !== "responsible_user" ? value.method : undefined)
+  const method: AiAuthMethod = (value && value.mode !== "router" && value.mode !== "responsible_user" && value.mode !== "harness_login" ? value.method : undefined)
     ?? accounts.data?.connections.find((account) => account.provider === activeProvider && account.isDefault)?.method
     ?? (activeProvider === "openrouter" || activeProvider === "google" || activeProvider === "deepseek" ? "api_key" : "subscription");
   const compatiblePools = agentId ? accounts.data?.pools?.filter(pool => pool.enabled && pool.members.some(member => isAiConnectionCompatible(member.binding, routerAdapterType ?? adapterType, member.profile.model, member.profile.provider, member.profile.acpxAgent))) ?? [] : [];
   if (!provider) return null;
-  if (legacy && !value && !adopting)
+  // An unmanaged OpenCode agent may stay on its harness login, so the legacy
+  // notice must not hide the choice that says so explicitly.
+  if (legacy && !value && !adopting && !isHarnessLoginCompatibleAdapter(adapterType))
     return (
       <AiConnectionLegacyNotice
         readOnly={readOnly}
@@ -151,7 +156,7 @@ export function AiConnectionField({
     );
   return (
     <div className="space-y-4">
-      {value && value.mode !== "router" && (adapterType !== "opencode_local" || Boolean(model)) && !isAiConnectionCompatible(value, adapterType, model) && (
+      {value && value.mode !== "router" && value.mode !== "harness_login" && (adapterType !== "opencode_local" || Boolean(model)) && !isAiConnectionCompatible(value, adapterType, model) && (
         <p role="alert" className="text-sm text-destructive">
           This connection does not support the current harness and model. Choose
           a compatible connection before saving.
@@ -200,14 +205,16 @@ export function AiConnectionField({
               {pendingAdoption?.mode === "router" ? "Reset existing sessions that use an account outside this pool." : "Saving validates access to the selected connection. Existing sessions keep their account or require an explicit reset before adoption."}
             </DialogDescription>
           </DialogHeader>
-          {pendingAdoption?.mode !== "router" && <p className="text-sm">
+          {pendingAdoption?.mode !== "router" && pendingAdoption?.mode !== "harness_login" && <p className="text-sm">
             {pendingAdoption?.mode === "responsible_user"
               ? `Responsible user’s default. For you: ${accounts.data?.connections.find((account) => account.isDefault && account.provider === activeProvider)?.name ?? "Not connected"}. Other users use their own default.`
-              : accounts.data?.connections.find(
-                  (account) => account.id === pendingAdoption?.connectionId,
-                )?.name}
+              : (pendingAdoption?.mode === "shared" || pendingAdoption?.mode === "delegated")
+                ? accounts.data?.connections.find(
+                    (account) => account.id === pendingAdoption.connectionId,
+                  )?.name
+                : undefined}
           </p>}
-          {pendingAdoption?.mode !== "router" && <p className="text-xs text-muted-foreground">
+          {pendingAdoption?.mode !== "router" && pendingAdoption?.mode !== "harness_login" && <p className="text-xs text-muted-foreground">
             After adoption, missing credentials block execution. Previous
             authentication will not be used as a fallback.
           </p>}

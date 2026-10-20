@@ -429,6 +429,12 @@ export async function testEnvironment(
       const args = ["run", "--format", "json"];
       // V2 folds the variant into the model ref and has no `--variant` flag.
       const openCodeV2 = usesOpenCodeV2Cli(openCodeCliVersion);
+      // The probe runs with the connection's projected provider env. Without
+      // `--standalone` the shared background service ignores that env and
+      // reports the projected model as unavailable.
+      if (openCodeV2 && (runtimeEnv.OPENCODE_CONFIG_CONTENT || runtimeEnv.OPENCODE_CONFIG)) {
+        args.push("--standalone");
+      }
       const probeModelArg =
         openCodeV2 && variant ? `${probeModel}#${variant}` : probeModel;
       args.push("--model", probeModelArg);

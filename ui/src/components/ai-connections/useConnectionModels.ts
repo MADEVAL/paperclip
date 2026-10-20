@@ -6,9 +6,12 @@ import { queryKeys } from "@/lib/queryKeys";
 
 export function useConnectionModels(
   companyId: string | null | undefined,
-  binding: AiConnectionBinding | undefined,
+  requestedBinding: AiConnectionBinding | undefined,
   harness: string,
 ) {
+  // Harness login keeps the harness's own catalog; there is no connection to
+  // scope models to.
+  const binding = requestedBinding?.mode === "harness_login" ? undefined : requestedBinding;
   const accounts = useQuery({
     queryKey: ["ai-connections", companyId],
     queryFn: () => aiConnectionsApi.list(companyId!),

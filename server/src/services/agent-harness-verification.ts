@@ -48,6 +48,9 @@ export function agentHarnessVerificationService(db: Db, manager: PluginWorkerMan
     const context = { consumerType: "agent" as const, consumerId: agent.id, actorType: "system" as const,
       actorId: "agent-lifecycle", responsibleUserId };
     let binding = agent.runtimeConfig.aiConnection ? aiRuntimeConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
+    // Harness login runs on the CLI's own credentials, so the lifecycle check
+    // must not strip auth env or take the managed probe path.
+    if (binding?.mode === "harness_login") binding = undefined;
     let config = agent.adapterConfig;
     if (binding?.mode === "router") {
       const selected = await aiConnectionRouterService(db, manager).resolve({ companyId: agent.companyId,

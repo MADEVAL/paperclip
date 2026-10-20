@@ -107,7 +107,7 @@ export function AiConnectionPicker({
         <>
           <ConnectionChoiceList
             disabled={readOnly}
-            selectedId={value?.mode === "responsible_user" ? "responsible_user" : value?.connectionId}
+            selectedId={value?.mode === "responsible_user" ? "responsible_user" : value?.mode === "shared" || value?.mode === "delegated" ? value.connectionId : undefined}
             choices={[
               { id: "responsible_user", name: "Responsible user’s connection", description: <>
                 <span className="block">For you: {personalDefault?.name ?? "Not connected"}</span>

@@ -3,6 +3,7 @@ import { Plus, UserRound } from "lucide-react";
 import {
   aiConnectionCatalogSlug,
   isAiConnectionCompatible,
+  isHarnessLoginCompatibleAdapter,
   type AiConnectionBinding,
 } from "@paperclipai/shared";
 import {
@@ -44,12 +45,16 @@ export function AiConnectionSelect({
 }: AiConnectionPickerProps & { adapterType: string }) {
   const selectId = useId();
   const personal = personalAiDefault(connections, requirement, currentUserId);
+  const harnessLogin = value?.mode === "harness_login";
+  const harnessLoginAvailable = isHarnessLoginCompatibleAdapter(adapterType);
   const selected =
     value?.mode === "responsible_user"
       ? personal
-      : connections.find(
-          (c) => c.id === value?.connectionId && c.grantId === value?.grantId,
-        );
+      : value?.mode === "shared" || value?.mode === "delegated"
+        ? connections.find(
+            (c) => c.id === value.connectionId && c.grantId === value.grantId,
+          )
+        : undefined;
   const compatible = connections
     .filter(
       (c) =>
@@ -69,6 +74,7 @@ export function AiConnectionSelect({
   const unavailable = Boolean(
     value &&
       value.mode !== "responsible_user" &&
+      value.mode !== "harness_login" &&
       !selected &&
       !loading &&
       !error,
@@ -86,6 +92,8 @@ export function AiConnectionSelect({
     selected && !compatible.some((c) => c.id === selected.id);
   const change = (id: string) => {
     if (id === "connect") return onConnect();
+    if (id === "harness_login")
+      return onChange({ provider: requirement.provider, method: personal?.method ?? "api_key", mode: "harness_login" });
     if (id === "responsible_user")
       return onChange({
         provider: requirement.provider,
@@ -111,7 +119,9 @@ export function AiConnectionSelect({
         value={
           value?.mode === "responsible_user"
             ? "responsible_user"
-            : (value?.connectionId ?? "")
+            : harnessLogin
+              ? "harness_login"
+              : (value && "connectionId" in value ? value.connectionId : "")
         }
         onValueChange={change}
         disabled={readOnly || loading || Boolean(error)}
@@ -126,7 +136,9 @@ export function AiConnectionSelect({
               ? <ConnectionLabel connection={selected} label={value?.mode === "responsible_user" ? "Responsible user’s default" : undefined} />
               : value?.mode === "responsible_user"
                 ? "Responsible user’s default"
-                : value ? "Unavailable connection" : undefined}
+                : harnessLogin
+                  ? "Harness login (no managed connection)"
+                  : value ? "Unavailable connection" : undefined}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -154,6 +166,12 @@ export function AiConnectionSelect({
             <span className="flex size-5 shrink-0 items-center justify-center"><Plus className="size-4" /></span>
             Connect an account…
           </SelectItem>
+          {harnessLoginAvailable && (
+            <SelectItem value="harness_login">
+              <span className="flex size-5 shrink-0 items-center justify-center"><UserRound className="size-4" /></span>
+              Harness login (no managed connection)
+            </SelectItem>
+          )}
         </SelectContent>
       </Select>
       {!readOnly && onReconnect && !loading && !error && (

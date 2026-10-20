@@ -691,6 +691,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     );
     const buildArgs = (resumeSessionId: string | null) => {
       const args = ["run", "--format", "json"];
+      // A projected AI connection arrives only through env. OpenCode's shared
+      // background service was started without that env, so it answers
+      // `provider.no-route` ("Model unavailable") for the projected provider.
+      // A standalone server inherits the run env and resolves it correctly.
+      if (openCodeV2 && (env.OPENCODE_CONFIG_CONTENT || env.OPENCODE_CONFIG)) {
+        args.push("--standalone");
+      }
       if (printLogs) args.push("--print-logs");
       if (resumeSessionId) args.push("--session", resumeSessionId);
       // OpenCode V2 dropped the `--variant` flag: the variant joins the model

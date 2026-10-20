@@ -30,6 +30,9 @@ export function defaultAiConnectionForHire(
   const inherited = aiRuntimeConnectionBindingSchema.safeParse(managerBinding);
   // Unmanaged parents keep their existing login and credential-reference paths.
   if (!inherited.success) return undefined;
+  // A manager that runs on harness login leaves its hires unmanaged too; the
+  // child keeps its own OpenCode login instead of inheriting a connection.
+  if (inherited.data.mode === "harness_login") return undefined;
   const env = config.env && typeof config.env === "object" ? config.env as Record<string, unknown> : {};
   const hasChildAuth = (provider: AiProvider) =>
     PROVIDER_AUTH_ENV_KEYS[provider].some((key) => env[key] !== undefined);

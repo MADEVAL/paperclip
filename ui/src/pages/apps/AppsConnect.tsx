@@ -67,7 +67,10 @@ export function AppsConnect({ byoOnly = false, credentialSource = "paperclip_vau
       initialProtocol={preset?.protocol}
       providerLabel={preset?.label}
       onCancel={() => navigate("/apps")}
-      onComplete={binding => navigate(`/apps/${binding.connectionId}/permissions`)}
+      onComplete={binding => {
+        if (binding.mode !== "shared" && binding.mode !== "delegated") return;
+        navigate(`/apps/${binding.connectionId}/permissions`);
+      }}
     />
   );
   if (source?.startsWith("ai-router-")) {

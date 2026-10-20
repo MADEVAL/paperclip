@@ -90,7 +90,7 @@ export async function prepareHeartbeatExecutionConfiguration(db: Db, input: Hear
         homeMode: bindHeartbeatRunnerHomeMode(parseObject(agent.adapterConfig), persistedNativeExecutionInput).homeMode }
     : input.config.sourceWorkspaceConfig;
   const preconfiguredHome = agent.adapterType === "paperclip_runner" && sourceWorkspaceConfig.homeMode === "preconfigured";
-  const aiBinding = preconfiguredHome ? undefined : input.config.aiBinding;
+  const aiBinding = preconfiguredHome || input.config.aiBinding?.mode === "harness_login" ? undefined : input.config.aiBinding;
   const { trustPreset, useIsolatedTaskDirectory, explicitTaskDirectory } = input.policy;
   const { secretsSvc, companySkills, appendRunEvent, finalizeAiConnectionBusyDeferral } = input.services;
   let managedAiRuntime: ManagedAiRuntime | undefined;

@@ -102,6 +102,8 @@ export function bindingProblem(
   userId: string,
   _agentId: string,
 ) {
+  // Harness login has no account to check; the harness supplies its own.
+  if (binding.mode === "harness_login") return null;
   if (
     binding.provider !== requirement.provider ||
     (binding.mode !== "responsible_user" && requirement.method !== undefined && binding.method !== requirement.method)

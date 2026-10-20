@@ -208,7 +208,7 @@ export function ConnectionIntentInteractionBody({
         } else {
           const agent = await agentsApi.get(interaction.payload.requestingAgentId, interaction.companyId);
           const current = agent.runtimeConfig.aiConnection;
-          if (!current || current.mode === "responsible_user" || current.mode === "router" || current.connectionId !== previous.id || current.grantId !== previous.grantId) {
+          if (!current || current.mode === "responsible_user" || current.mode === "router" || current.mode === "harness_login" || current.connectionId !== previous.id || current.grantId !== previous.grantId) {
             throw new Error("The agent’s AI connection changed. Reload the task and try again.");
           }
           if (result.generation !== setupGeneration.current) return;
@@ -411,7 +411,10 @@ export function ConnectionIntentInteractionBody({
         companyId={interaction.companyId}
         agentId={interaction.payload.requestingAgentId}
         reconnect={repair.connection}
-        onComplete={(binding) => selectAiAccountMutation.mutate({ connectionId: binding.connectionId, grantId: binding.grantId, method: binding.method ?? "api_key", generation })}
+        onComplete={(binding) => {
+          if (binding.mode !== "shared" && binding.mode !== "delegated") return;
+          selectAiAccountMutation.mutate({ connectionId: binding.connectionId, grantId: binding.grantId, method: binding.method ?? "api_key", generation });
+        }}
         onCancel={() => { closeSetup(); returnFocusToCard(); }}
       /> : <AiConnectionCredentialStep
         companyId={interaction.companyId}

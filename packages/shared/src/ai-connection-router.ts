@@ -11,7 +11,7 @@ export type AiRuntimeConnectionBinding = z.infer<typeof aiRuntimeConnectionBindi
 
 export const aiConnectionPoolMemberSchema = z.object({
   id: z.string().uuid(),
-  binding: aiConnectionBindingSchema.refine((v) => v.mode !== "responsible_user", "Select an explicit account grant"),
+  binding: aiConnectionBindingSchema.refine((v) => v.mode !== "responsible_user" && v.mode !== "harness_login", "Select an explicit account grant"),
   profile: z.object({
     provider: z.enum(["codex", "acpx", "opencode"]),
     acpxAgent: z.enum(["claude", "grok"]).optional(),

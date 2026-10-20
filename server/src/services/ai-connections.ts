@@ -276,6 +276,8 @@ export function aiConnectionService(db: Db) {
     binding: AiConnectionBinding;
   }) {
     const { companyId, userId, agentId, binding } = input;
+    if (binding.mode === "harness_login")
+      throw aiConnectionConfigurationFailure("ai_connection_incompatible", "Harness login does not use a managed connection");
     if (
       !isAiConnectionCompatible(
         binding,

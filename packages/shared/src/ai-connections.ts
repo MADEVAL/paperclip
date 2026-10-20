@@ -66,7 +66,29 @@ export const aiConnectionBindingSchema = z.discriminatedUnion("mode", [
       grantId: z.string().uuid(),
     })
     .strict(),
+  // No managed connection: the harness authenticates with its own local login
+  // (for OpenCode, `opencode auth`). Provider/method are kept for wire
+  // compatibility with binding readers but are never resolved as credentials.
+  // Used by harnesses whose catalogs include provider logins Paperclip cannot
+  // manage, such as OpenCode Zen free models.
+  z.object({ ...requirement, mode: z.literal("harness_login") }).strict(),
 ]);
+
+/**
+ * Harnesses that can run on their own local login. Both OpenCode harnesses read
+ * provider credentials from the CLI/service they already talk to, so Paperclip
+ * must not project a `paperclip` provider for them.
+ */
+export const HARNESS_LOGIN_ADAPTERS = ["opencode_local", "opencode_gateway"] as const;
+
+export function isHarnessLoginCompatibleAdapter(adapterType: unknown): boolean {
+  return typeof adapterType === "string"
+    && (HARNESS_LOGIN_ADAPTERS as readonly string[]).includes(adapterType);
+}
+
+export function isHarnessLoginBinding(value: unknown): value is { mode: "harness_login" } {
+  return Boolean(value && typeof value === "object" && (value as { mode?: unknown }).mode === "harness_login");
+}
 export type AiConnectionBinding = z.infer<typeof aiConnectionBindingSchema>;
 export const aiConnectionMetadataSchema = z.object({ ...requirement, routing: aiProviderRoutingSchema.optional() }).strict();
 export type AiConnectionMetadata = z.infer<typeof aiConnectionMetadataSchema>;
@@ -144,6 +166,10 @@ export function isAiConnectionCompatible(
   acpxAgent?: unknown,
 ): boolean {
   adapterType = aiRoutingHarness(adapterType, runnerProvider, acpxAgent);
+  // Harness login needs no connection; it only asks whether this harness has one.
+  if ("mode" in requirement && requirement.mode === "harness_login") {
+    return isHarnessLoginCompatibleAdapter(adapterType);
+  }
   if ("routing" in requirement && requirement.routing) return requirement.method === "api_key" && isAiRoutingCompatible(requirement.routing, adapterType);
   // A fixed binding contains identity only. The service checks authoritative
   // connection metadata before resolving credentials or running the harness.
