@@ -9867,6 +9867,7 @@ export function issueService(db: Db) {
       companyId: string,
       data: IssueCreateInput,
       dbOrTx: Db | DbTransaction = db,
+      options?: { afterCreate?: (issue: { id: string; companyId: string }) => void },
     ) => {
       const {
         workspaceSelection, workspaceSelectionSource = "explicit", workspaceSelectionActor,
@@ -10458,12 +10459,19 @@ export function issueService(db: Db) {
       // Best-effort direct-Jev classification. Inert unless the company enabled
       // the `priority` purpose and saved a shared TypeSafe connection. It never
       // blocks the create and never fails it.
+      // When the caller owns a transaction, a separate connection cannot see the
+      // uncommitted row yet, so the hooks must run after that transaction
+      // commits. The caller receives the issue through `afterCreate`.
       if (createdRef.current) {
-        const issueId = createdRef.current.id;
-        void suggestIssuePriority(db, { companyId, issueId }).catch(() => {});
-        // A semantic duplicate check runs only for genuinely new tasks: a task the
-        // title, conversation, or idempotency guard already reused never reaches here.
-        void suggestDuplicateIssue(db, { companyId, issueId }).catch(() => {});
+        const created = createdRef.current;
+        if (dbOrTx === db) {
+          void suggestIssuePriority(db, { companyId, issueId: created.id }).catch(() => {});
+          // A semantic duplicate check runs only for genuinely new tasks: a task the
+          // title, conversation, or idempotency guard already reused never reaches here.
+          void suggestDuplicateIssue(db, { companyId, issueId: created.id }).catch(() => {});
+        } else {
+          options?.afterCreate?.({ id: created.id, companyId: created.companyId });
+        }
       }
       return created;
     },

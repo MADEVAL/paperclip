@@ -15,6 +15,7 @@ import {
   checkAcceptance, escalateDecision, gatePlan, resolveDecisionGuidance, suggestDuplicateIssue, triageIssue,
 } from "../services/decision-features.js";
 import { documentService } from "../services/documents.js";
+import { issueService } from "../services/issues.js";
 import { decisionReceipt, runDecisionProvider } from "../services/decision-model-provider.js";
 
 vi.mock("../services/decision-model-provider.js", async (importOriginal) => {
@@ -51,8 +52,30 @@ async function fixture() {
 
 const duplicateAnswer = () => ({ answers: { verdict: { type: "choice" as const, choice: "duplicate", confidence: 0.95 } }, receipt: decisionReceipt("openai", { usage: { inputTokens: 50, outputTokens: 0 } }) });
 
-describe("decision escalation loop", () => {
-  it("creates an issue-scoped ask_user_questions interaction and copies only metadata", async () => {
+describe("create-time decision hooks", () => {
+  it("defers classify/dedupe until the caller's transaction commits", async () => {
+    const f = await fixture();
+    const deferred: Array<{ id: string; companyId: string }> = [];
+    let visibleBeforeCommit = true;
+    await db.transaction(async (tx) => {
+      const created = await issueService(db).create(f.companyId, {
+        title: "Transaction hook timing",
+        description: "Classify and dedupe must wait for the commit.",
+        assigneeAgentId: f.agentId,
+        status: "todo",
+        createdByUserId: "alice",
+        visibility: "open",
+      }, tx, { afterCreate: (issue) => deferred.push(issue) });
+      // A separate connection cannot see the uncommitted row; running the
+      // decision hooks here would silently no-op, which is the bug this guards.
+      visibleBeforeCommit = (await db.select().from(issues).where(eq(issues.id, created.id))).length > 0;
+    });
+    expect(deferred).toHaveLength(1);
+    expect(visibleBeforeCommit).toBe(false);
+  });
+});
+
+describe("decision escalation loop", () => {  it("creates an issue-scoped ask_user_questions interaction and copies only metadata", async () => {
     const f = await fixture();
     const result = await escalateDecision(db, {
       companyId: f.companyId, featureId: "issues.triage", invocationId: randomUUID(),

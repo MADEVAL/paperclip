@@ -307,7 +307,7 @@ import {
   projectReadSqlCondition,
 } from "../services/authorization.js";
 import { stalledReviewDecisionService } from "../services/stalled-review-decisions.js";
-import { checkAcceptance, escalateDecision, gatePlan, plansGate } from "../services/decision-features.js";
+import { checkAcceptance, escalateDecision, gatePlan, plansGate, suggestDuplicateIssue, suggestIssuePriority } from "../services/decision-features.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
 import { ensurePersonalPrivateProject } from "../services/projects.js";
@@ -12447,12 +12447,15 @@ export function issueRoutes(
           deduplicationReason = reason;
         },
       };
+      const deferredDecisionHooks: Array<{ id: string; companyId: string }> = [];
       const createAcceptedIssue = (data: typeof createInput) => {
         if (actor.actorType !== "user" || isOnboardingFirstTask || !data.assigneeAgentId || ["backlog", "done", "cancelled"].includes(data.status ?? "")) {
           return svc.create(companyId, data);
         }
         return db.transaction(async tx => {
-        const created = await svc.create(companyId, data, tx);
+        const created = await svc.create(companyId, data, tx, {
+          afterCreate: (issue) => deferredDecisionHooks.push(issue),
+        });
         if (!deduplicationReason && !isOnboardingFirstTask && actor.actorType === "user" && created.assigneeAgentId && !["backlog", "done", "cancelled"].includes(created.status)) {
           await enqueueFastResponse(tx as unknown as Db, { companyId, issueId: created.id, agentId: created.assigneeAgentId,
             responsibleUserId: actor.actorId, sourceKey: `issue:${created.id}`, acceptedAt: new Date(created.createdAt) });
@@ -12471,9 +12474,18 @@ export function issueRoutes(
         if (!(isOnboardingFirstTask && isOnboardingFirstTaskConflict(error)))
           throw error;
         isOnboardingFirstTask = false;
+        deferredDecisionHooks.length = 0;
         const { originKind: _onboardingOriginKind, ...ordinaryCreateInput } =
           createInput;
         issue = await createAcceptedIssue(ordinaryCreateInput);
+      }
+      // Decision hooks for a transactional create must run only after commit;
+      // a separate connection cannot read the row inside the transaction.
+      if (!deduplicationReason) {
+        for (const created of deferredDecisionHooks) {
+          void suggestIssuePriority(db, { companyId, issueId: created.id }).catch(() => {});
+          void suggestDuplicateIssue(db, { companyId, issueId: created.id }).catch(() => {});
+        }
       }
       if (deduplicationReason) {
       const referenceSummary = await issueReferencesSvc.listIssueReferenceSummary(issue.id);
