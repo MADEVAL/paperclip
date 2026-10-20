@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { heartbeatRuns, issues, type Db } from "@paperclipai/db";
 import { setIssueTitleSchema, type SetIssueTitle } from "@paperclipai/shared";
-import { badRequest, conflict, forbidden, notFound } from "../errors.js";
+import { badRequest, conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { persistActivity, type ActivityPublication, type LogActivityInput } from "./activity-log.js";
 import { issueReferenceService } from "./issue-references.js";
 
@@ -10,6 +10,24 @@ type TitleResult = { id: string; title: string; titleNeedsGeneration: boolean; c
 type TitleReceipt = { issueId: string; title: string; onlyIfProvisional: boolean; result: TitleResult };
 
 const MAX_TASK_TITLE_RECEIPTS_PER_RUN = 64;
+const NON_ASCII = /[^\x00-\x7F]/;
+const QUESTION_RUN = /\?{3,}/;
+
+/**
+ * Windows PowerShell 5.1 encodes a string request body as ASCII unless the
+ * request content type carries a charset, so a Cyrillic title sent from a
+ * shell arrives as a run of "?". Refuse that lossy write instead of replacing
+ * the previous non-ASCII title with question marks; the caller can retry with
+ * a UTF-8 body.
+ */
+export function assertTitleEncodingIntact(previousTitle: string, nextTitle: string) {
+  if (!QUESTION_RUN.test(nextTitle) || NON_ASCII.test(nextTitle)) return;
+  if (!NON_ASCII.test(previousTitle)) return;
+  throw unprocessable(
+    "Title would replace non-ASCII text with question marks (encoding lost). Send the request body as UTF-8; with Windows PowerShell use -ContentType 'application/json; charset=utf-8'.",
+    { code: "title_encoding_lost" },
+  );
+}
 
 /** Caller owns the transaction and publishes the activity only after commit. */
 export async function setIssueTitle(
@@ -70,6 +88,7 @@ export async function setIssueTitle(
     || (issue.title === title && !issue.titleNeedsGeneration)) {
     return { result: await saveReceipt({ id: issue.id, title: issue.title, titleNeedsGeneration: issue.titleNeedsGeneration, changed: false }), publication: null };
   }
+  assertTitleEncodingIntact(issue.title, title);
   await tx.update(issues).set({ title, titleNeedsGeneration: false, updatedAt: new Date() }).where(predicate);
   await issueReferenceService(tx).syncIssue(issueId, tx);
   const { publication } = await persistActivity(tx, {

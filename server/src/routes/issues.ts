@@ -12,7 +12,7 @@ import {
   resolveIssueCreationSource,
 } from "../services/issue-creation-source.js";
 import { activeIssueInteractionCondition, readTaskQuestionContext } from "../services/issue-question-context.js";
-import { setIssueTitle } from "../services/issue-title.js";
+import { assertTitleEncodingIntact, setIssueTitle } from "../services/issue-title.js";
 import { setIssueTitleSchema } from "@paperclipai/shared";
 import { resolveConfirmationFromComment } from "../services/confirmation-comment-resolution.js";
 import { createIssueReadTiming } from "../services/issue-read-timing.js";
@@ -13641,6 +13641,7 @@ export function issueRoutes(
         );
       const titleOrDescriptionChanged =
         req.body.title !== undefined || req.body.description !== undefined;
+      if (typeof req.body.title === "string") assertTitleEncodingIntact(existing.title, req.body.title);
       const existingRelations = Array.isArray(req.body.blockedByIssueIds)
         ? await svc.getRelationSummaries(existing.id)
         : null;

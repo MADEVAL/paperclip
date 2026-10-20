@@ -59,6 +59,17 @@ describe("task titles", () => {
     expect(setIssueTitleSchema.safeParse({ title: "x".repeat(241) }).success).toBe(false);
   });
 
+  it("rejects a title that lost non-ASCII text to question marks", async () => {
+    const f = await server.fixture();
+    await server.db.update(issues).set({ title: "Проверить статус работы", titleNeedsGeneration: false }).where(eq(issues.id, f.issueId));
+    const lossy = await request(f, `/issues/${f.issueId}/title`, "PUT", { title: "???????? ??????? ??????" });
+    expect(lossy.status).toBe(422);
+    expect(await lossy.json()).toMatchObject({ details: { code: "title_encoding_lost" } });
+    const accepted = await request(f, `/issues/${f.issueId}/title`, "PUT", { title: "Проверить статус работы надёжно" });
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toMatchObject({ title: "Проверить статус работы надёжно" });
+  });
+
   it("removes leading Markdown before truncating a provisional title", async () => {
     const f = await server.fixture();
     const description = [
