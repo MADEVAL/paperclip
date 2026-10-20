@@ -18568,7 +18568,7 @@ export function issueRoutes(
       // explicit approval must never be overridden. Fail-open on any error.
       const acceptanceAllowsCompletion =
         shouldAutoApproveReviewComment && actor.actorType === "agent"
-          ? (await checkAcceptance(db, { companyId: issue.companyId, issueId: issue.id, actor: req.actor }).catch(() => ({ status: "pass" as const }))).status === "pass"
+          ? (await checkAcceptance(db, { companyId: issue.companyId, issueId: issue.id, actor: req.actor })).status === "pass"
           : true;
       const shouldAutoApprove = shouldAutoApproveReviewComment && acceptanceAllowsCompletion;
 

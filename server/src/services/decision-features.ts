@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, ne, notInArray, sql } from "drizzle-orm";
 import { decisionInvocations, issues, type Db } from "@paperclipai/db";
 import { decisionFeatureDefinition, type DecisionAnswer, type DecisionProvider } from "@paperclipai/shared";
+import { forbidden } from "../errors.js";
 import { logActivity } from "./activity-log.js";
 import type { AuthorizationActor } from "./authorization.js";
 import { decisionModelService, defineDecisionFeature, type DecisionContext } from "./decision-models.js";
@@ -230,7 +231,14 @@ export async function gatePlan(
 ): Promise<PlanGateResult> {
   const context: DecisionContext = { companyId: input.companyId, feature: plansGate, actor: input.actor, issueId: input.issueId };
   const service = await decisionService(db);
-  if (!(await service.availability(context)).available) return { status: "proceed" };
+  const availability = await service.availability(context);
+  if (!availability.available) {
+    // A run that does not own the task must not silently skip the gate; only a
+    // model that is intentionally unavailable (not configured, disabled,
+    // purpose off) is fail-open here.
+    if (availability.reason === "access_denied") throw forbidden("Task does not belong to this run");
+    return { status: "proceed" };
+  }
   const { documentService } = await import("./documents.js");
   const plan = await documentService(db).getIssueDocumentByKey(input.issueId, "plan").catch(() => null);
   const body = plan && typeof plan.body === "string" ? plan.body.trim() : "";
@@ -244,7 +252,7 @@ export async function gatePlan(
       verifiable: { type: "boolean", instructions: "Does the plan name how the result will be verified?" },
     },
   }, AbortSignal.timeout(8_000));
-  if (result.status !== "succeeded") return { status: "proceed" };
+  if (result.status !== "succeeded") return { status: "gate", invocationId: result.invocationId ?? "", choice: "unavailable", confidence: 0 };
   const ready = result.answers.ready;
   const confidence = answerConfidence(ready);
   const choice = ready?.type === "choice" ? ready.choice : null;
@@ -271,7 +279,13 @@ export async function checkAcceptance(
 ): Promise<AcceptanceResult> {
   const context: DecisionContext = { companyId: input.companyId, feature: qaAcceptance, actor: input.actor, issueId: input.issueId };
   const service = await decisionService(db);
-  if (!(await service.availability(context)).available) return { status: "pass" };
+  const availability = await service.availability(context);
+  if (!availability.available) {
+    // A self-review from a run that does not own the task must not pass the
+    // acceptance gate; intentional model unavailability stays fail-open.
+    if (availability.reason === "access_denied") throw forbidden("Task does not belong to this run");
+    return { status: "pass" };
+  }
   const { documentService } = await import("./documents.js");
   const plan = await documentService(db).getIssueDocumentByKey(input.issueId, "plan").catch(() => null);
   const criteria = plan && typeof plan.body === "string" ? plan.body.trim() : "";
@@ -290,7 +304,7 @@ export async function checkAcceptance(
       met: { type: "boolean", instructions: "Are all acceptance criteria met?" },
     },
   }, AbortSignal.timeout(8_000));
-  if (result.status !== "succeeded") return { status: "pass" };
+  if (result.status !== "succeeded") return { status: "fail", invocationId: result.invocationId ?? "", choice: "unavailable" };
   const verdict = result.answers.verdict;
   const confidence = answerConfidence(verdict);
   const choice = verdict?.type === "choice" ? verdict.choice : null;
