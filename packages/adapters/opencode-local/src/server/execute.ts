@@ -695,7 +695,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       // background service was started without that env, so it answers
       // `provider.no-route` ("Model unavailable") for the projected provider.
       // A standalone server inherits the run env and resolves it correctly.
-      if (openCodeV2 && (env.OPENCODE_CONFIG_CONTENT || env.OPENCODE_CONFIG)) {
+      // Windows also needs a standalone server so the per-run UTF-8 shell
+      // plugin (loaded from XDG_CONFIG_HOME) actually applies.
+      if (
+        openCodeV2 &&
+        (env.OPENCODE_CONFIG_CONTENT || env.OPENCODE_CONFIG ||
+          (!executionTargetIsRemote && process.platform === "win32"))
+      ) {
         args.push("--standalone");
       }
       if (printLogs) args.push("--print-logs");

@@ -447,9 +447,27 @@ describe("OpenCode version guard", () => {
     expect(lastExecutionArgs()).toContain("--standalone");
   });
 
+  it("uses a standalone server on Windows V2 so the UTF-8 shell plugin loads", async () => {
+    versionProbeMock.mockResolvedValue({ version: "2.0.26", major: 2, minor: 0, patch: 26, supported: true });
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+    try {
+      await callExecute();
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, "platform", originalPlatform);
+    }
+    expect(lastExecutionArgs()).toContain("--standalone");
+  });
+
   it("keeps the shared OpenCode service when no provider config is projected", async () => {
     versionProbeMock.mockResolvedValue({ version: "2.0.26", major: 2, minor: 0, patch: 26, supported: true });
-    await callExecute();
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+    try {
+      await callExecute();
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, "platform", originalPlatform);
+    }
     expect(lastExecutionArgs()).not.toContain("--standalone");
   });
 

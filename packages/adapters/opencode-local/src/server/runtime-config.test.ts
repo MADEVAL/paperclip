@@ -7,6 +7,9 @@ import { prepareOpenCodeRuntimeConfig } from "./runtime-config.js";
 import {
   PAPERCLIP_WINDOWS_UTF8_PLUGIN_FILENAME,
   PAPERCLIP_WINDOWS_UTF8_PLUGIN_SOURCE,
+  PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_DIR,
+  PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_PACKAGE_JSON,
+  PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_SOURCE,
 } from "./windows-utf8.js";
 
 const cleanupPaths = new Set<string>();
@@ -396,7 +399,7 @@ describe("prepareOpenCodeRuntimeConfig", () => {
     cleanupPaths.delete(prepared.env.XDG_CONFIG_HOME);
   });
 
-  it("does not inject the Windows UTF-8 shell plugin off Windows or for the V2 config", async () => {
+  it("does not inject the Windows UTF-8 shell plugin off Windows", async () => {
     const linuxHome = await makeConfigHome({ permission: { read: "allow" } });
     const linuxPrepared = await prepareOpenCodeRuntimeConfig({
       env: { XDG_CONFIG_HOME: linuxHome },
@@ -406,11 +409,14 @@ describe("prepareOpenCodeRuntimeConfig", () => {
     cleanupPaths.add(linuxPrepared.env.XDG_CONFIG_HOME);
     const linuxConfig = JSON.parse(
       await fs.readFile(path.join(linuxPrepared.env.XDG_CONFIG_HOME, "opencode", "opencode.json"), "utf8"),
-    ) as { plugin?: unknown };
+    ) as { plugin?: unknown; plugins?: unknown };
     expect(linuxConfig.plugin).toBeUndefined();
+    expect(linuxConfig.plugins).toBeUndefined();
     await linuxPrepared.cleanup();
     cleanupPaths.delete(linuxPrepared.env.XDG_CONFIG_HOME);
+  });
 
+  it("injects the OpenCode 2 Windows UTF-8 shell plugin as a loadable plugin directory", async () => {
     const v2Home = await makeConfigHome({ permission: { read: "allow" } });
     const v2Prepared = await prepareOpenCodeRuntimeConfig({
       env: { XDG_CONFIG_HOME: v2Home },
@@ -419,10 +425,24 @@ describe("prepareOpenCodeRuntimeConfig", () => {
       openCodeV2: true,
     });
     cleanupPaths.add(v2Prepared.env.XDG_CONFIG_HOME);
+    const configDir = path.join(v2Prepared.env.XDG_CONFIG_HOME, "opencode");
     const v2Config = JSON.parse(
-      await fs.readFile(path.join(v2Prepared.env.XDG_CONFIG_HOME, "opencode", "opencode.json"), "utf8"),
-    ) as { plugin?: unknown };
+      await fs.readFile(path.join(configDir, "opencode.json"), "utf8"),
+    ) as { plugin?: unknown; plugins?: unknown[] };
+    // V1 keys must not leak into the V2 config shape.
     expect(v2Config.plugin).toBeUndefined();
+    const pluginRef = `./plugins/${PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_DIR}`;
+    expect(v2Config.plugins).toEqual([pluginRef]);
+    const pluginDir = path.join(configDir, "plugins", PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_DIR);
+    await expect(fs.readFile(path.join(pluginDir, "package.json"), "utf8")).resolves.toBe(
+      PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_PACKAGE_JSON,
+    );
+    await expect(fs.readFile(path.join(pluginDir, "index.ts"), "utf8")).resolves.toBe(
+      PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_SOURCE,
+    );
+    expect(PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_SOURCE).toContain('ctx.shell.hook("create.before"');
+    expect(PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_SOURCE).toContain("Invoke-RestMethod:ContentType");
+    expect(v2Prepared.notes.some((note) => note.includes("OpenCode 2 Windows UTF-8 shell plugin"))).toBe(true);
     await v2Prepared.cleanup();
     cleanupPaths.delete(v2Prepared.env.XDG_CONFIG_HOME);
   });
@@ -517,6 +537,18 @@ describe("prepareOpenCodeRuntimeConfig", () => {
       };
       await hooks["tool.execute.before"]({ tool: "shell" }, convertedJson);
       expect(convertedJson.args.command).toContain("Invoke-RestMethod:ContentType");
+
+      // An explicit -ContentType application/json wins over the default parameter,
+      // so the literal itself must carry the charset or the body degrades to "?".
+      const explicitContentType = {
+        args: {
+          command:
+            "$body=@{title='Привет'}|ConvertTo-Json; Invoke-RestMethod -Uri $u -Method Post -ContentType 'application/json' -Body $body",
+        },
+      };
+      await hooks["tool.execute.before"]({ tool: "shell" }, explicitContentType);
+      expect(explicitContentType.args.command).toContain("application/json; charset=utf-8");
+      expect(explicitContentType.args.command).not.toContain("-ContentType 'application/json'");
 
       // A command that already carries the complete settings is not re-injected.
       const fullSettingsCommand = replayedJson.args.command;
