@@ -187,6 +187,12 @@ function Setup({
   );
   const [connection, setConnection] = useState<ProviderConnection | null>(null);
   const aiBinding = runtimeAiBinding ?? connection?.aiConnection;
+  // Harness login keeps the harness's own catalog (OpenCode's free models), so
+  // the provider filter must not apply to it. This mirrors the edit form.
+  const modelProviderFilter =
+    aiBinding && aiBinding.mode !== "harness_login" && "provider" in aiBinding
+      ? aiBinding.provider
+      : undefined;
   const connectionModels = useConnectionModels(companyId, aiBinding, brandType);
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("");
@@ -255,8 +261,8 @@ function Setup({
     queryFn: () => environmentsApi.capabilities(companyId),
   });
   const models = useQuery({
-    queryKey: queryKeys.agents.adapterModels(companyId, brandType, null, aiBinding?.provider),
-    queryFn: () => agentsApi.adapterModels(companyId, brandType, { provider: aiBinding?.provider }),
+    queryKey: queryKeys.agents.adapterModels(companyId, brandType, null, modelProviderFilter),
+    queryFn: () => agentsApi.adapterModels(companyId, brandType, { provider: modelProviderFilter }),
     enabled: Boolean(brandType) && showModel && !connectionModels,
     retry: false,
   });
@@ -267,10 +273,10 @@ function Setup({
     try {
       const refreshed = await agentsApi.adapterModels(companyId, brandType, {
         refresh: true,
-        provider: aiBinding?.provider,
+        provider: modelProviderFilter,
       });
       cache.setQueryData(
-        queryKeys.agents.adapterModels(companyId, brandType, null, aiBinding?.provider),
+        queryKeys.agents.adapterModels(companyId, brandType, null, modelProviderFilter),
         refreshed,
       );
     } catch (error) {
