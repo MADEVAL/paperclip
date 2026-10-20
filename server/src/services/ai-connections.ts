@@ -651,6 +651,14 @@ export function aiConnectionService(db: Db) {
         )
           throw unprocessable("The connection changed. Start reconnect again.");
       }
+      const source = aiConnectionCatalogSlug(input.provider, routing);
+      const providerName = getAppStoreDefinition(source)?.name ?? AI_CONNECTION_CAPABILITIES[input.provider].name;
+      // A shared connection's credential belongs to the company, so it has no
+      // user secret definition to carry a display name. Keep the grant-derived
+      // key for identity and name the secret after the connection, otherwise
+      // the Secrets page can only show an opaque grant id.
+      const sharedSecretKey = `ai-${grantId}`;
+      const sharedSecretName = `${input.name} (organization)`;
       let secretId = reconnect?.grant.credentialSecretRefs.find(
         (r) => r.configPath === "ai.credential",
       )?.secretId;
@@ -659,13 +667,22 @@ export function aiConnectionService(db: Db) {
       // indexed credential must leave every legacy consumer's value untouched,
       // even after adoption has cleared the connection's validation marker.
       if (secretId) {
-        const [source] = await tx.select({ name: companySecrets.name, key: userSecretDefinitions.key })
+        const [existingSecret] = await tx.select({
+          name: companySecrets.name,
+          key: companySecrets.key,
+          definitionKey: userSecretDefinitions.key,
+          providerMetadata: companySecrets.providerMetadata,
+        })
           .from(companySecrets)
           .leftJoin(userSecretDefinitions, eq(userSecretDefinitions.id, companySecrets.userSecretDefinitionId))
           .where(and(eq(companySecrets.companyId, companyId), eq(companySecrets.id, secretId)));
+        // Shared slots also match the legacy name created before shared secrets
+        // carried a key and provider metadata, so reconnects adopt, not orphan.
         const privateSlot = input.ownership === "personal"
-          ? source?.key === `ai_${grantId.replaceAll("-", "_")}`
-          : source?.name === `ai-${grantId}`;
+          ? existingSecret?.definitionKey === `ai_${grantId.replaceAll("-", "_")}`
+          : existingSecret?.providerMetadata?.aiGrantId === grantId
+            || existingSecret?.key === sharedSecretKey
+            || existingSecret?.name === sharedSecretKey;
         if (!privateSlot) secretId = undefined;
       }
       if (!verifiedCredential) { secretId = undefined; }
@@ -692,18 +709,28 @@ export function aiConnectionService(db: Db) {
           { userId },
         );
         secretId = secret.id;
-      } else
-        secretId = (
-          await secrets.create(
-            companyId,
-            {
-              name: `ai-${grantId}`,
-              provider: "local_encrypted",
-              value: verifiedCredential,
-            },
-            { userId },
-          )
-        ).id;
+      } else {
+        // Two shared connections can carry the same display name, and secret
+        // names are unique per company. Fall back to a grant discriminator
+        // instead of failing the connection save with a 409.
+        const createSharedSecret = (name: string) => secrets.create(
+          companyId,
+          {
+            name,
+            key: sharedSecretKey,
+            description: `Shared ${providerName} credential for this organization's AI connection.`,
+            providerMetadata: { aiGrantId: grantId, provider: input.provider },
+            provider: "local_encrypted",
+            value: verifiedCredential,
+          },
+          { userId },
+        );
+        const secret = await createSharedSecret(sharedSecretName).catch((error: unknown) => {
+          if ((error as { status?: number } | null)?.status !== 409) throw error;
+          return createSharedSecret(`${sharedSecretName} ${grantId.slice(0, 8)}`);
+        });
+        secretId = secret.id;
+      }
       if (input.agentIds.length) {
         const targets = await tx
           .select({ id: agents.id })
@@ -717,8 +744,6 @@ export function aiConnectionService(db: Db) {
         if (targets.length !== new Set(input.agentIds).size)
           throw forbidden("Agent does not belong to this company");
       }
-      const source = aiConnectionCatalogSlug(input.provider, routing);
-      const providerName = getAppStoreDefinition(source)?.name ?? AI_CONNECTION_CAPABILITIES[input.provider].name;
       const key = `app-gallery:${source}`;
       await tx
         .insert(toolApplications)

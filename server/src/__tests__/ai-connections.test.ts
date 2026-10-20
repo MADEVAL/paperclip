@@ -14,7 +14,7 @@ import { promises as fs } from "node:fs";
 import { mkdtemp, realpath, rm, access, readFile, writeFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createDb, companies, agents, agentTaskSessions, heartbeatRuns, companyMemberships, connectionGrants, toolApplications, connectionGrantDelegations, connectionGrantMembers, toolConnections, toolConnectionInstalls, aiConnectionDefaults, aiProviderDefaults, adapterAuthSessions, environments, issues, issueThreadInteractions, issueRecoveryActions, connectionIntentDeliveries, agentWakeupRequests, companySecrets, companySecretVersions, userSecretDefinitions, principalPermissionGrants } from "@paperclipai/db";
 import { startEmbeddedPostgresTestDatabase } from "@paperclipai/db/test-embedded-postgres";
 import { fetchCompanyQuotaWindows } from "../services/quota-windows.js";
@@ -1385,6 +1385,31 @@ console.log(JSON.stringify({ type: "result", subtype: "success", result: "hello"
     const created = await create("alice", "Shared credential proof", "shared");
     const selected = await service.select({ ...input, userId: "bob", binding: { ...binding, mode: "shared", ...created } });
     expect(await service.credential(selected)).toBe("fixture-Shared credential proof");
+  });
+  it("names a shared credential for the organization and adopts the legacy grant-only name on reconnect", async () => {
+    const created = await create("alice", "Shared Jev account", "shared");
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, created.grantId));
+    const secretId = grant!.credentialSecretRefs.find(ref => ref.configPath === "ai.credential")!.secretId;
+    const [secret] = await db.select().from(companySecrets).where(eq(companySecrets.id, secretId));
+    expect(secret!.name).toBe("Shared Jev account (organization)");
+    expect(secret!.key).toBe(`ai-${created.grantId}`);
+    expect(secret!.description).toContain("credential for this organization's AI connection");
+    expect(secret!.providerMetadata).toMatchObject({ aiGrantId: created.grantId, provider: "anthropic" });
+    // Secrets created before this naming carried only the grant id as name and key.
+    await db.update(companySecrets).set({ name: `ai-${created.grantId}`, key: `ai-${created.grantId}`, description: null, providerMetadata: null }).where(eq(companySecrets.id, secretId));
+    await service.save(companyId, "alice", { provider: "anthropic", method: "api_key", ownership: "shared", name: "Shared Jev account", apiKey: "fixture", agentIds: [], allAgents: true, connectionId: created.connection.id }, "fixture-rotated");
+    const rotated = await db.select().from(companySecrets).where(eq(companySecrets.key, `ai-${created.grantId}`));
+    expect(rotated).toHaveLength(1);
+    expect(rotated[0]!.id).toBe(secretId);
+  });
+  it("keeps shared secret names unique when two connections share a display name", async () => {
+    const first = await create("alice", "Duplicate account", "shared");
+    const second = await create("alice", "Duplicate account", "shared");
+    const secrets = await db.select().from(companySecrets).where(inArray(companySecrets.key, [`ai-${first.grantId}`, `ai-${second.grantId}`]));
+    expect(secrets.map(secret => secret.name).sort()).toEqual([
+      "Duplicate account (organization)",
+      `Duplicate account (organization) ${second.grantId.slice(0, 8)}`,
+    ].sort());
   });
   it("saves successful login completion once and rejects abandoned attempts", async () => {
     const [environment] = await db.insert(environments).values({ name: "AI login test", driver: "sandbox" }).returning();
