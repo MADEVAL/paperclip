@@ -35,7 +35,9 @@ The adapter is version-aware and talks to either server family end to end.
 Qualified version windows: `1.18.34 <= v < 2.0.0` and `2.0.0 <= v < 2.1.0`.
 `1.18.35` is admitted without any bypass variable. Versions outside every
 window are rejected unless `PAPERCLIP_OPENCODE_ALLOW_UNSUPPORTED_GATEWAY_VERSION=1`
-is set or `adapterConfig.version` is pinned to `v1`/`v2`.
+is set or `adapterConfig.version` is pinned to `v1`/`v2`; the pin applies to both
+the environment test and live runs, so a newer server release never turns the
+test red for an operator who already chose the protocol family.
 
 `version: "auto"` probes both `V1` (`/global/health`) and `V2` (`/api/info`) and
 picks whichever reports a semantic version; pinning `version` probes only that
@@ -64,6 +66,15 @@ passwordless server.
 
 Credentials are never logged; the adapter redacts the password and the encoded
 `Authorization` header from every emitted line.
+
+## Transport security
+
+`https://` is the normal choice for a remote server. `http://` is always allowed
+on loopback (`localhost`, `127.0.0.1`, `::1`). A non-loopback `http://` URL is
+rejected in both the environment test and live runs unless the operator sets
+`dangerouslyAllowInsecureRemoteHttp: true`, which trades TLS for a trusted
+private LAN: basic-auth credentials then travel in clear text. Treat the flag as
+a documented local-network decision, not as a default.
 
 ## Configuration
 

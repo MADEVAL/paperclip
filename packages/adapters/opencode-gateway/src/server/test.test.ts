@@ -85,6 +85,21 @@ describe("testEnvironment", () => {
     expect(result.checks.some((check) => check.code === "opencode_gateway_version_unqualified")).toBe(true);
   });
 
+  it("accepts an unqualified version when the protocol family is pinned", async () => {
+    globalThis.fetch = (async (request: RequestInfo | URL) => {
+      const url = new URL(String(request));
+      if (url.pathname === "/api/info") return json({ version: "2.1.2", capabilities: {} });
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+
+    const result = await testEnvironment(
+      makeContext({ apiBaseUrl: "http://127.0.0.1:4096", password: "s3cret", model: "a/b", version: "v2" }),
+    );
+    const check = result.checks.find((entry) => entry.code === "opencode_gateway_version_unqualified");
+    expect(check?.level).toBe("warn");
+    expect(result.status).not.toBe("fail");
+  });
+
   it("detects a V2 server whose /global/health returns the HTML app shell", async () => {
     globalThis.fetch = (async (request: RequestInfo | URL) => {
       const url = new URL(String(request));

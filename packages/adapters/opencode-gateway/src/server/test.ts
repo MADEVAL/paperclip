@@ -13,6 +13,7 @@ import {
 } from "./transport.js";
 import {
   isQualifiedOpenCodeVersion,
+  qualifiedOpenCodeWindows,
   unqualifiedOpenCodeVersionMessage,
   type OpenCodeApiVersion,
 } from "./protocol.js";
@@ -213,14 +214,20 @@ export async function testEnvironment(
 
   if (info.version) {
     const qualified = isQualifiedOpenCodeVersion(info.version);
+    // Mirror execute(): an explicit `adapterConfig.version` pin is the operator
+    // accepting an unverified release, so it must not fail the environment test
+    // either. Auto-detect stays strict and still needs the bypass env var.
+    const pinned = cfg.versionOverride !== "auto";
     checks.push({
       code: qualified
         ? "opencode_gateway_version_qualified"
         : "opencode_gateway_version_unqualified",
-      level: qualified ? "info" : "error",
+      level: qualified ? "info" : pinned ? "warn" : "error",
       message: qualified
         ? `OpenCode ${info.version} is within a qualified protocol window.`
-        : unqualifiedOpenCodeVersionMessage(info.version),
+        : pinned
+          ? `OpenCode ${info.version} is outside the qualified window (${qualifiedOpenCodeWindows()}); adapterConfig.version pins ${cfg.versionOverride}, so Paperclip uses that protocol family.`
+          : unqualifiedOpenCodeVersionMessage(info.version),
     });
   } else {
     checks.push({
