@@ -66,6 +66,7 @@ interface ExecutionState {
   provider: string | null;
   lastEventName: string | null;
   sawSessionEvent: boolean;
+  traceBytes: number;
   terminal: TerminalState | null;
   resolveTerminal: (state: TerminalState) => void;
   terminalPromise: Promise<TerminalState>;
@@ -101,6 +102,7 @@ function createExecutionState(sessionId: string): ExecutionState {
     provider: null,
     lastEventName: null,
     sawSessionEvent: false,
+    traceBytes: 0,
     terminal: null,
     resolveTerminal,
     terminalPromise,
@@ -155,10 +157,24 @@ async function handleEvent(input: {
   const eventSessionId = sessionIdOfEvent(raw);
   if (eventSessionId && eventSessionId === state.sessionId) state.sawSessionEvent = true;
 
-  await ctx.onLog(
-    "stdout",
-    `[opencode-gateway:event] session=${state.sessionId} event=${type ?? "message"} data=${stringifyForLog(redactForLog(raw, [], 0, redactText), 8_000)}\n`,
-  );
+  // Full payload tracing is opt-in: a busy session emits thousands of
+  // `message.part.updated` frames, and logging each one floods the run log and
+  // slows the run down. Reasoning/text deltas are streamed below; here we keep
+  // a compact lifecycle line per non-partial event plus an optional capped trace.
+  if (type !== "message.part.updated") {
+    await ctx.onLog(
+      "stdout",
+      `[opencode-gateway:event] session=${state.sessionId} event=${type ?? "message"}\n`,
+    );
+  }
+  if (process.env.OPENCODE_GATEWAY_TRACE === "1" && state.traceBytes < 256 * 1024) {
+    const traced = stringifyForLog(redactForLog(raw, [], 0, redactText), 8_000);
+    state.traceBytes += traced.length;
+    await ctx.onLog(
+      "stdout",
+      `[opencode-gateway:trace] session=${state.sessionId} event=${type ?? "message"} data=${traced}\n`,
+    );
+  }
 
   const delta = extractAssistantTextDelta(raw, state.textByPartId);
   if (delta) {
@@ -646,12 +662,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     } catch (err) {
       await ctx.onLog("stderr", `[opencode-gateway] interrupt failed: ${redactText(errorString(err))}\n`);
     }
+    // Keep whatever assistant text arrived before the deadline: a timed-out run
+    // must not look like a silent no-op in the run detail.
+    const partialOutput = state.outputChunks.join("").trim();
     return {
       exitCode: 1,
       signal: null,
       timedOut: true,
       errorCode: "opencode_gateway_timeout",
-      errorMessage: `OpenCode gateway run timed out after ${cfg.timeoutSec}s.`,
+      errorMessage: `OpenCode gateway run timed out after ${cfg.timeoutSec}s (last event: ${state.lastEventName ?? "none"}).`,
       provider: "opencode",
       ...(state.usage ? { usage: state.usage } : {}),
       ...(state.costUsd !== null ? { costUsd: state.costUsd } : {}),
@@ -665,7 +684,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         apiVersion,
         status: "timeout",
         last_event: state.lastEventName,
+        output: partialOutput,
+        usage: state.usage ?? null,
+        cost_usd: state.costUsd,
       },
+      ...(partialOutput ? { summary: partialOutput.slice(0, 2_000) } : {}),
     };
   }
 
