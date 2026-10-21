@@ -5380,8 +5380,14 @@ export function agentRoutes(
         adapterConfig: patchData.adapterConfig,
       });
     }
-    if (existing.runtimeConfig.aiConnection && requestedRuntimeConfig && !requestedRuntimeConfig.aiConnection) requestedRuntimeConfig.aiConnection = existing.runtimeConfig.aiConnection;
-    const nextAiBinding = aiRuntimeConnectionBindingSchema.safeParse(requestedRuntimeConfig?.aiConnection ?? existing.runtimeConfig.aiConnection).data;
+    // Gateways that own provider credentials (OpenCode gateway) must not keep an
+    // AI connection: it is incompatible with the new harness and would fail the
+    // save with "Select an AI connection compatible...". Drop it on any save.
+    const adapterUsesAiConnection = requestedAdapterType !== "opencode_gateway";
+    if (adapterUsesAiConnection && existing.runtimeConfig.aiConnection && requestedRuntimeConfig && !requestedRuntimeConfig.aiConnection) requestedRuntimeConfig.aiConnection = existing.runtimeConfig.aiConnection;
+    const nextAiBinding = adapterUsesAiConnection
+      ? aiRuntimeConnectionBindingSchema.safeParse(requestedRuntimeConfig?.aiConnection ?? existing.runtimeConfig.aiConnection).data
+      : undefined;
     if (nextAiBinding) {
       await assertCanUpdateAgent(req, existing);
       const changed = JSON.stringify(nextAiBinding) !== JSON.stringify(existing.runtimeConfig.aiConnection);
@@ -5390,6 +5396,12 @@ export function agentRoutes(
       if (changed || (nextAiBinding.mode === "router" && requestedAdapterType !== existing.adapterType)) await validateManagedAgentBinding(req, existing.companyId, existing.id, requestedAdapterType, aiConfig, nextAiBinding, (patchData.defaultEnvironmentId !== undefined ? patchData.defaultEnvironmentId : existing.defaultEnvironmentId) as string | null, true);
     }
     if (requestedRuntimeConfig) patchData.runtimeConfig = requestedRuntimeConfig;
+    if (!adapterUsesAiConnection && (touchesAdapterConfiguration || requestedRuntimeConfig)) {
+      patchData.runtimeConfig = {
+        ...(requestedRuntimeConfig ?? (existing.runtimeConfig as Record<string, unknown>) ?? {}),
+        aiConnection: null,
+      };
+    }
     if (touchesAdapterConfiguration || Object.prototype.hasOwnProperty.call(patchData, "defaultEnvironmentId")) {
       await assertAgentDefaultEnvironmentSelection(
         existing.companyId,
