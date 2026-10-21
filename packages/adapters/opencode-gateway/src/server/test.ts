@@ -21,6 +21,7 @@ import { parseGatewayConfig } from "./config.js";
 import {
   allowsInsecureRemoteHttp,
   isLoopbackHostname,
+  isPrivateNetworkHostname,
   isRemotePlainHttp,
   remotePlainHttpDeniedMessage,
 } from "./transport-security.js";
@@ -70,19 +71,25 @@ export async function testEnvironment(
       level: "info",
       message: `Configured OpenCode server: ${cfg.baseUrl.toString()}`,
     });
-    if (isRemotePlainHttp(cfg.baseUrl) && !allowsInsecureRemoteHttp(config)) {
+    if (
+      isRemotePlainHttp(cfg.baseUrl)
+      && !allowsInsecureRemoteHttp(config)
+      && !isPrivateNetworkHostname(cfg.baseUrl.hostname)
+    ) {
       checks.push({
         code: "opencode_gateway_plain_http_remote_denied",
         level: "error",
         message: remotePlainHttpDeniedMessage(cfg.baseUrl.hostname),
-        hint: "Use https:// (TLS) or a private overlay network, or enable adapterConfig.dangerouslyAllowInsecureRemoteHttp only for a trusted local network. Loopback http://localhost and http://127.0.0.1 remain allowed.",
+        hint: "Use https:// (TLS) or a private overlay network, or enable adapterConfig.dangerouslyAllowInsecureRemoteHttp only for a trusted local network. Loopback http://localhost, RFC1918 LAN addresses and http://127.0.0.1 remain allowed.",
       });
     } else if (isRemotePlainHttp(cfg.baseUrl)) {
       checks.push({
         code: "opencode_gateway_plain_http_remote_unsafe_allowed",
         level: "warn",
-        message: "Unsafe dev escape hatch enabled for non-loopback HTTP OpenCode traffic.",
-        hint: "Remove the escape hatch and use TLS before sending real credentials across a network.",
+        message: isPrivateNetworkHostname(cfg.baseUrl.hostname)
+          ? "Plain HTTP to a private LAN address: encrypted only by the network perimeter."
+          : "Unsafe dev escape hatch enabled for non-loopback HTTP OpenCode traffic.",
+        hint: "Use TLS if the LAN is not trusted; credentials travel base64-encoded, not encrypted.",
       });
     } else if (cfg.baseUrl.protocol === "http:" && isLoopbackHostname(cfg.baseUrl.hostname)) {
       checks.push({

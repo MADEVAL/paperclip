@@ -42,6 +42,7 @@ import {
 import {
   allowsInsecureRemoteHttp,
   isLoopbackHostname,
+  isPrivateNetworkHostname,
   isRemotePlainHttp,
   remotePlainHttpDeniedMessage,
 } from "./transport-security.js";
@@ -419,7 +420,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       errorMessage: `Invalid OpenCode gateway apiBaseUrl: ${cfg.apiBaseUrl}`,
     });
   }
-  if (isRemotePlainHttp(cfg.baseUrl) && !allowsInsecureRemoteHttp(cfg.raw)) {
+  if (isRemotePlainHttp(cfg.baseUrl) && !allowsInsecureRemoteHttp(cfg.raw) && !isPrivateNetworkHostname(cfg.baseUrl.hostname)) {
     return failureResult({
       errorCode: "opencode_gateway_plain_http_remote_denied",
       errorMessage: remotePlainHttpDeniedMessage(cfg.baseUrl.hostname),

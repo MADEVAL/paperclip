@@ -63,7 +63,28 @@ describe("testEnvironment", () => {
     expect(result.checks.some((check) => check.code === "opencode_gateway_auth_failed")).toBe(true);
   });
 
-  it("blocks remote plain HTTP", async () => {
+  it("allows plain HTTP to a private LAN address without the escape hatch", async () => {
+    globalThis.fetch = (async (request: RequestInfo | URL) => {
+      const url = new URL(String(request));
+      if (url.pathname === "/api/info") return json({ version: "2.0.26", capabilities: {} });
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+
+    const result = await testEnvironment(
+      makeContext({
+        apiBaseUrl: "http://192.168.0.117:4096",
+        password: "s3cret",
+        model: "a/b",
+        directory: "/workspace",
+      }),
+    );
+    expect(
+      result.checks.some((check) => check.code === "opencode_gateway_plain_http_remote_denied"),
+    ).toBe(false);
+    expect(result.status).not.toBe("fail");
+  });
+
+  it("still blocks plain HTTP to a public host without the escape hatch", async () => {
     const result = await testEnvironment(
       makeContext({ apiBaseUrl: "http://gateway.example.com:4096", password: "s3cret", model: "a/b" }),
     );

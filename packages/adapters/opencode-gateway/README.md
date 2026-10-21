@@ -70,11 +70,15 @@ Credentials are never logged; the adapter redacts the password and the encoded
 ## Transport security
 
 `https://` is the normal choice for a remote server. `http://` is always allowed
-on loopback (`localhost`, `127.0.0.1`, `::1`). A non-loopback `http://` URL is
-rejected in both the environment test and live runs unless the operator sets
+on loopback (`localhost`, `127.0.0.1`, `::1`) and on private LAN addresses
+(RFC1918, IPv6 ULA, link-local): the farm runs its OpenCode servers that way, and
+requiring an escape-hatch toggle for every private address was operator friction.
+Any other non-loopback `http://` URL (a public hostname or public IP) is rejected
+in both the environment test and live runs unless the operator sets
 `dangerouslyAllowInsecureRemoteHttp: true`, which trades TLS for a trusted
 private LAN: basic-auth credentials then travel in clear text. Treat the flag as
-a documented local-network decision, not as a default.
+a documented local-network decision, not as a default, and prefer TLS whenever
+the LAN is not trusted.
 
 `opencode serve` exposes no TLS of its own — its flags are `--port`,
 `--hostname`, `--cors`, and `--mdns` — so any non-plain-HTTP transport needs a
@@ -84,7 +88,8 @@ a non-loopback `http://` URL and still requires the escape hatch.
 
 | Option | Adapter URL | Escape hatch | Notes |
 |---|---|---|---|
-| Plain HTTP on a trusted LAN | `http://host:4096` | yes | credentials travel base64-encoded; only behind a trusted perimeter |
+| Plain HTTP on a private LAN | `http://192.168.x.y:4096` | no | RFC1918/ULA/link-local are allowed; credentials travel base64-encoded, so only behind a trusted perimeter |
+| Plain HTTP to a public host | `http://example.com:4096` | yes | rejected by default; the escape hatch opts into sending credentials in clear text |
 | SSH local forward | `http://127.0.0.1:4096` | no | `ssh -L 4096:127.0.0.1:4096 user@host`; needs an SSH server on the gateway host and a supervised tunnel |
 | TLS reverse proxy (Caddy/nginx/stunnel) | `https://host:8443` | no | a self-signed leaf is rejected by Node's fetch; use an internal CA plus `NODE_EXTRA_CA_CERTS`, or trust the proxy CA on the Paperclip host |
 | Co-located Paperclip | `http://127.0.0.1:4096` | no | one Paperclip instance per gateway host, no network hop |
