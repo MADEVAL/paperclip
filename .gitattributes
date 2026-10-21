@@ -1,8 +1,11 @@
 patches/*.patch whitespace=-space-before-tab
 packages/db/src/migrations/*.sql -text
 
-# Hashing contract: bundled skill content and frozen release snapshots are
-# compared byte-for-byte against what the instance seeded. Keep LF on every
-# platform so a Windows checkout (core.autocrlf=true) cannot invalidate it.
-skills/** text eol=lf
-skills-releases/** text eol=lf
+# Repo-wide line-ending contract. The farm runs on Windows, but git must keep
+# LF in the working tree: skill inventories, migrations and snapshot hashes are
+# compared byte-for-byte, and core.autocrlf=true silently rewrites them.
+# Batch files stay CRLF because cmd.exe parses them line-by-line.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=lf
