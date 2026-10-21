@@ -76,6 +76,24 @@ rejected in both the environment test and live runs unless the operator sets
 private LAN: basic-auth credentials then travel in clear text. Treat the flag as
 a documented local-network decision, not as a default.
 
+`opencode serve` exposes no TLS of its own — its flags are `--port`,
+`--hostname`, `--cors`, and `--mdns` — so any non-plain-HTTP transport needs a
+layer in front of it. The guard judges the URL scheme and hostname, not the
+wire: an encrypted overlay by itself (WireGuard, Tailscale, IPsec) still leaves
+a non-loopback `http://` URL and still requires the escape hatch.
+
+| Option | Adapter URL | Escape hatch | Notes |
+|---|---|---|---|
+| Plain HTTP on a trusted LAN | `http://host:4096` | yes | credentials travel base64-encoded; only behind a trusted perimeter |
+| SSH local forward | `http://127.0.0.1:4096` | no | `ssh -L 4096:127.0.0.1:4096 user@host`; needs an SSH server on the gateway host and a supervised tunnel |
+| TLS reverse proxy (Caddy/nginx/stunnel) | `https://host:8443` | no | a self-signed leaf is rejected by Node's fetch; use an internal CA plus `NODE_EXTRA_CA_CERTS`, or trust the proxy CA on the Paperclip host |
+| Co-located Paperclip | `http://127.0.0.1:4096` | no | one Paperclip instance per gateway host, no network hop |
+| Encrypted overlay only | `http://100.x.y.z:4096` | yes | the wire is protected, the guard still fires |
+
+Whichever option is chosen, verify the result with the environment test and a
+real prompt: the test must report no `error` checks, and `/api/info` must return
+the server version over the exact URL the adapter will use.
+
 ## Configuration
 
 See `agentConfigurationDoc` (exported from the package root) and the schema from
