@@ -868,7 +868,7 @@ const openCodeGatewayAdapter: ServerAdapterModule = {
   models: openCodeGatewayModels,
   listModels: listOpenCodeGatewayCatalogModels,
   refreshModels: refreshOpenCodeGatewayCatalogModels,
-  supportsLocalAgentJwt: false,
+  supportsLocalAgentJwt: true,
   supportsInstructionsBundle: false,
   requiresMaterializedRuntimeSkills: false,
   getConfigSchema: getOpenCodeGatewayConfigSchema,
