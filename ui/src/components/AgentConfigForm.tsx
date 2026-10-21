@@ -922,9 +922,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       ? "Paperclip Computer"
       : "Local";
 
-  const parsedAiBinding = aiConnectionBindingSchema.safeParse(
-    (overlay.runtime.runtimeConfig as Record<string, unknown> | undefined)?.aiConnection ?? runtimeConfig.aiConnection,
-  ).data;
+  // An explicit `aiConnection: null` in the overlay (e.g. after switching to a
+  // gateway that owns providers) must win over the saved binding; `??` would
+  // resurrect the old DeepSeek binding and keep feeding its model list.
+  const runtimeOverlayConfig = overlay.runtime.runtimeConfig as Record<string, unknown> | undefined;
+  const rawAiConnection = runtimeOverlayConfig
+    && Object.prototype.hasOwnProperty.call(runtimeOverlayConfig, "aiConnection")
+    ? runtimeOverlayConfig.aiConnection
+    : runtimeConfig.aiConnection;
+  const parsedAiBinding = aiConnectionBindingSchema.safeParse(rawAiConnection).data;
   // Harness login keeps the harness's own catalog, so the OpenRouter filter
   // must not apply to it.
   const modelProvider = adapterType === "opencode_local" && parsedAiBinding && parsedAiBinding.mode !== "harness_login" && parsedAiBinding.provider === "openrouter" ? "openrouter" : runnerProvider;
@@ -1106,9 +1112,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       });
       const adapterConfig = buildAdapterConfigForTest(adapterConfigPatch);
       const agentId = isCreate ? undefined : props.agent.id;
-      const aiConnection = isCreate ? undefined : aiRuntimeConnectionBindingSchema.safeParse(
-        (overlay.runtime.runtimeConfig as Record<string, unknown> | undefined)?.aiConnection ?? props.agent.runtimeConfig.aiConnection,
-      ).data;
+      const aiConnection = isCreate ? undefined : aiRuntimeConnectionBindingSchema.safeParse(rawAiConnection).data;
       if (props.compactTestFeedback) {
         const providerAdapter = adapterType === "paperclip_runner"
           ? adapterConfig.provider === "codex" ? "codex_local"
@@ -1194,7 +1198,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     environmentCapabilities?.sandboxProviders?.[effectiveLoginProvider]?.supportsLoginPty === true;
   const loginNeedsPty = adapterCaps.login != null;
   const showAdapterLogin =
-    (isCreate || !((overlay.runtime.runtimeConfig as Record<string, unknown> | undefined)?.aiConnection ?? runtimeConfig.aiConnection)) &&
+    (isCreate || !rawAiConnection) &&
     adapterSupportsSandboxLogin &&
     effectiveLoginEnvironment?.driver === "sandbox" &&
     Boolean(effectiveLoginEnvironmentId) &&
@@ -1722,7 +1726,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           )}
 
           {!isExternalBotRunner && !adapterOwnsProviders && !isCreate && selectedCompanyId && <AiConnectionField companyId={selectedCompanyId} agentId={props.agent.id} agentName={props.agent.name} adapterType={aiRoutingHarness(adapterType, eff("adapterConfig", "provider", config.provider), eff("adapterConfig", "acpxAgent", config.acpxAgent))}
-            routerAdapterType={adapterType} value={aiRuntimeConnectionBindingSchema.safeParse((overlay.runtime.runtimeConfig as Record<string, unknown> | undefined)?.aiConnection ?? runtimeConfig.aiConnection).data}
+            routerAdapterType={adapterType} value={aiRuntimeConnectionBindingSchema.safeParse(rawAiConnection).data}
             model={String(eff("adapterConfig", "model", config.model) ?? "")} environmentId={currentDefaultEnvironmentId || undefined} legacy
             onChange={binding => mark("runtime", "runtimeConfig", { ...runtimeConfig, aiConnection: binding })} />}
 
