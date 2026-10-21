@@ -154,7 +154,7 @@ export function createServerAdapter(): ServerAdapterModule {
     models,
     listModels: listOpenCodeGatewayCatalogModels,
     refreshModels: refreshOpenCodeGatewayCatalogModels,
-    supportsLocalAgentJwt: false,
+    supportsLocalAgentJwt: true,
     supportsInstructionsBundle: false,
     requiresMaterializedRuntimeSkills: false,
     agentConfigurationDoc,

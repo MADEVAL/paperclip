@@ -47,6 +47,27 @@ function runtimeToolsLines(runtimeTools: AdapterExecutionContext["runtimeTools"]
   ];
 }
 
+function runtimeMcpLines(
+  runtimeMcp: AdapterExecutionContext["runtimeMcp"],
+  paperclipApiUrl: string | null,
+): string[] {
+  const servers = runtimeMcp?.getServers?.() ?? [];
+  const paperclip = servers.find(
+    (server) => server.connectionId === "paperclip-project-tools" && server.token,
+  );
+  if (!paperclip) return [];
+  const baseUrl =
+    paperclipApiUrl ??
+    paperclip.url.replace(/\/api\/mcp\/project-tools\/?$/, "");
+  return [
+    "Paperclip API access for this run (invocation context; nothing is persisted on the gateway host):",
+    `- API base URL: ${baseUrl}`,
+    `- Bearer token: ${paperclip.token}`,
+    "- Use `Authorization: Bearer <token>` plus `X-Paperclip-Run-Id: <run id>` for Paperclip REST calls such as comments and status updates.",
+    "- The token is scoped to this run. Do not print it, persist it, or reuse it after the run.",
+  ];
+}
+
 /**
  * Build the wake prompt for one OpenCode gateway run.
  *
@@ -112,6 +133,8 @@ export function buildGatewayPrompt(
   }
   const tools = runtimeToolsLines(ctx.runtimeTools);
   if (tools.length > 0) lines.push("", ...tools);
+  const mcp = runtimeMcpLines(ctx.runtimeMcp, opts.paperclipApiUrl);
+  if (mcp.length > 0) lines.push("", ...mcp);
 
   return {
     prompt: lines.filter((line) => line !== null && line !== undefined).join("\n").trim(),

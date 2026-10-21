@@ -32,7 +32,7 @@ describe("opencode_gateway package exports", () => {
     expect(adapter.refreshModels).toBe(refreshOpenCodeGatewayCatalogModels);
     expect(adapter.sessionCodec).toBeDefined();
     expect(adapter.sessionManagement?.supportsSessionResume).toBe(true);
-    expect(adapter.supportsLocalAgentJwt).toBe(false);
+    expect(adapter.supportsLocalAgentJwt).toBe(true);
     expect(adapter.supportsInstructionsBundle).toBe(false);
     expect(adapter.requiresMaterializedRuntimeSkills).toBe(false);
   });
