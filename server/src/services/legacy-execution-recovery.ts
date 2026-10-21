@@ -186,6 +186,7 @@ export async function terminalizeLegacyExecution(input: {
       return updated;
     }
     const review = task?.status === "in_review" ? parseIssueExecutionState(task.executionState) : null;
+    const legacyFingerprint = `legacy-execution:${run.id}`;
     const isCurrentReviewer = review?.status === "pending" &&
       review.currentParticipant?.type === "agent" && review.currentParticipant.agentId === run.agentId;
     if (
@@ -202,16 +203,23 @@ export async function terminalizeLegacyExecution(input: {
           eq(issueRecoveryActions.companyId, run.companyId),
           eq(issueRecoveryActions.sourceIssueId, task.id),
           eq(issueRecoveryActions.status, "resolved"),
-          ...(hasRequiredWorkspaceRecovery(updated.resultJson) ? [
-            sql`${issueRecoveryActions.evidence}->'workspaceRestoreRecovery'->>'schema' = ${LEGACY_WORKSPACE_RECOVERY_SCHEMA}`,
-          ] : []),
+          // A resolved decision for this exact run is final. Without the
+          // fingerprint match, a reconciliation that carries no workspace
+          // failure (for example a conversation-continuation fold) is re-created
+          // on every sweep, producing an endless recovery-action loop.
           or(
-            sql`${issueRecoveryActions.evidence}->'executionReconciliation'->>'runId' = ${run.id}`,
-            and(
-              sql`${issueRecoveryActions.evidence}->>'runId' = ${run.id}`,
-              or(sql`${issueRecoveryActions.evidence}->>'workspaceRestoreFailure' = 'restore_unsafe_archive'`,
-                sql`${issueRecoveryActions.evidence}->'workspaceRestoreRecovery'->>'schema' = ${LEGACY_WORKSPACE_RECOVERY_SCHEMA}`),
-              sql`${issueRecoveryActions.evidence}->'automaticRecovery'->>'replay' = 'blocked'`,
+            eq(issueRecoveryActions.fingerprint, legacyFingerprint),
+            ...(hasRequiredWorkspaceRecovery(updated.resultJson) ? [
+              sql`${issueRecoveryActions.evidence}->'workspaceRestoreRecovery'->>'schema' = ${LEGACY_WORKSPACE_RECOVERY_SCHEMA}`,
+            ] : []),
+            or(
+              sql`${issueRecoveryActions.evidence}->'executionReconciliation'->>'runId' = ${run.id}`,
+              and(
+                sql`${issueRecoveryActions.evidence}->>'runId' = ${run.id}`,
+                or(sql`${issueRecoveryActions.evidence}->>'workspaceRestoreFailure' = 'restore_unsafe_archive'`,
+                  sql`${issueRecoveryActions.evidence}->'workspaceRestoreRecovery'->>'schema' = ${LEGACY_WORKSPACE_RECOVERY_SCHEMA}`),
+                sql`${issueRecoveryActions.evidence}->'automaticRecovery'->>'replay' = 'blocked'`,
+              ),
             ),
           ),
         )).limit(1);
