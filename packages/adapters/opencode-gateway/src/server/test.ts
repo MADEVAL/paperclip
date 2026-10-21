@@ -83,10 +83,11 @@ export async function testEnvironment(
         hint: "Use https:// (TLS) or a private overlay network, or enable adapterConfig.dangerouslyAllowInsecureRemoteHttp only for a trusted local network. Loopback http://localhost, RFC1918 LAN addresses and http://127.0.0.1 remain allowed.",
       });
     } else if (isRemotePlainHttp(cfg.baseUrl)) {
+      const privateLan = isPrivateNetworkHostname(cfg.baseUrl.hostname);
       checks.push({
         code: "opencode_gateway_plain_http_remote_unsafe_allowed",
-        level: "warn",
-        message: isPrivateNetworkHostname(cfg.baseUrl.hostname)
+        level: privateLan ? "info" : "warn",
+        message: privateLan
           ? "Plain HTTP to a private LAN address: encrypted only by the network perimeter."
           : "Unsafe dev escape hatch enabled for non-loopback HTTP OpenCode traffic.",
         hint: "Use TLS if the LAN is not trusted; credentials travel base64-encoded, not encrypted.",
@@ -229,7 +230,7 @@ export async function testEnvironment(
       code: qualified
         ? "opencode_gateway_version_qualified"
         : "opencode_gateway_version_unqualified",
-      level: qualified ? "info" : pinned ? "warn" : "error",
+      level: qualified ? "info" : pinned ? "info" : "error",
       message: qualified
         ? `OpenCode ${info.version} is within a qualified protocol window.`
         : pinned
@@ -247,7 +248,7 @@ export async function testEnvironment(
 
   checks.push({
     code: "opencode_gateway_gateway_owns_providers",
-    level: "warn",
+    level: "info",
     message: "The OpenCode server owns provider credentials and model routing; Paperclip does not manage them.",
     hint: "Configure providers on the gateway host. One server can serve many companies, so isolate or dedicate servers per tenant.",
   });

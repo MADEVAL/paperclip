@@ -33,7 +33,7 @@ describe("testEnvironment", () => {
     const result = await testEnvironment(
       makeContext({ apiBaseUrl: "http://127.0.0.1:4096", password: "s3cret", model: "a/b", directory: "/workspace" }),
     );
-    expect(result.status).toBe("warn");
+    expect(result.status).toBe("pass");
     expect(result.checks.some((check) => check.code === "opencode_gateway_reachable")).toBe(true);
     expect(result.checks.some((check) => check.code === "opencode_gateway_version_qualified")).toBe(true);
     expect(result.checks.some((check) => check.code === "opencode_gateway_gateway_owns_providers")).toBe(true);
@@ -117,7 +117,7 @@ describe("testEnvironment", () => {
       makeContext({ apiBaseUrl: "http://127.0.0.1:4096", password: "s3cret", model: "a/b", version: "v2" }),
     );
     const check = result.checks.find((entry) => entry.code === "opencode_gateway_version_unqualified");
-    expect(check?.level).toBe("warn");
+    expect(check?.level).toBe("info");
     expect(result.status).not.toBe("fail");
   });
 
