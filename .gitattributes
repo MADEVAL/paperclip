@@ -1,2 +1,8 @@
 patches/*.patch whitespace=-space-before-tab
 packages/db/src/migrations/*.sql -text
+
+# Hashing contract: bundled skill content and frozen release snapshots are
+# compared byte-for-byte against what the instance seeded. Keep LF on every
+# platform so a Windows checkout (core.autocrlf=true) cannot invalidate it.
+skills/** text eol=lf
+skills-releases/** text eol=lf
