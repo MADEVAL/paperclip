@@ -637,6 +637,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const isDotRunner = runnerProvider === "openai_dot";
   const isGrokBotRunner = runnerProvider === "grok_bot";
   const isExternalBotRunner = isDotRunner || isGrokBotRunner;
+  // The gateway host owns provider credentials and model routing: Paperclip
+  // must not bind this agent to an AI connection or filter models by one.
+  const adapterOwnsProviders = adapterType === "opencode_gateway";
   const showAdapterTestEnvironmentButton = !isGrokBotRunner && (props.showAdapterTestEnvironmentButton ?? true);
   const showInlineAdapterTestEnvironmentButton =
     showAdapterTestEnvironmentButton && !props.onTestActionChange && !props.compactTestFeedback;
@@ -925,7 +928,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   // Harness login keeps the harness's own catalog, so the OpenRouter filter
   // must not apply to it.
   const modelProvider = adapterType === "opencode_local" && parsedAiBinding && parsedAiBinding.mode !== "harness_login" && parsedAiBinding.provider === "openrouter" ? "openrouter" : runnerProvider;
-  const connectionModels = useConnectionModels(isExternalBotRunner ? null : selectedCompanyId, isCreate ? undefined : parsedAiBinding, aiRoutingHarness(adapterType, runnerProvider, eff("adapterConfig", "acpxAgent", config.acpxAgent)));
+  const connectionModels = useConnectionModels(isExternalBotRunner || adapterOwnsProviders ? null : selectedCompanyId, isCreate ? undefined : parsedAiBinding, aiRoutingHarness(adapterType, runnerProvider, eff("adapterConfig", "acpxAgent", config.acpxAgent)));
   // Fetch adapter models for the effective provider, including unsaved changes.
   const modelAdapterType = isCodexHarness ? harnessType : adapterType;
   const modelQueryKey = selectedCompanyId
@@ -1682,6 +1685,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       ...prev,
                       adapterType: t,
                       runner: t === "codex_local" ? "auto" : undefined,
+                      ...(t === "opencode_gateway"
+                        ? { runtime: { runtimeConfig: { ...runtimeConfig, aiConnection: null } } }
+                        : {}),
                       adapterConfig: {
                         model:
                           t === "gemini_local"
@@ -1715,7 +1721,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </Field>
           )}
 
-          {!isExternalBotRunner && !isCreate && selectedCompanyId && <AiConnectionField companyId={selectedCompanyId} agentId={props.agent.id} agentName={props.agent.name} adapterType={aiRoutingHarness(adapterType, eff("adapterConfig", "provider", config.provider), eff("adapterConfig", "acpxAgent", config.acpxAgent))}
+          {!isExternalBotRunner && !adapterOwnsProviders && !isCreate && selectedCompanyId && <AiConnectionField companyId={selectedCompanyId} agentId={props.agent.id} agentName={props.agent.name} adapterType={aiRoutingHarness(adapterType, eff("adapterConfig", "provider", config.provider), eff("adapterConfig", "acpxAgent", config.acpxAgent))}
             routerAdapterType={adapterType} value={aiRuntimeConnectionBindingSchema.safeParse((overlay.runtime.runtimeConfig as Record<string, unknown> | undefined)?.aiConnection ?? runtimeConfig.aiConnection).data}
             model={String(eff("adapterConfig", "model", config.model) ?? "")} environmentId={currentDefaultEnvironmentId || undefined} legacy
             onChange={binding => mark("runtime", "runtimeConfig", { ...runtimeConfig, aiConnection: binding })} />}
