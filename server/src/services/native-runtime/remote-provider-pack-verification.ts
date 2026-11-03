@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/command-managed-runtime";
 import { runRemoteProviderVerification } from "./remote-provider-pack.js";
+import { QUALIFIED_OPENCODE_RUNNER_VERSIONS } from "./provider-profile.js";
 
 export function canonicalProviderPackJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalProviderPackJson).join(",")}]`;
@@ -145,9 +146,15 @@ export async function verifyRemoteProviderPack<T extends ProviderPackIdentity>({
     bypassSession: true,
     timeoutMs: 30_000,
   }), "OpenCode version verification");
-  if (
-    opencodeVersion.stdout.trim() !== manifest.payload.pins.opencode
-  ) {
+  // The pack's own pin stays authoritative. A remote target may also carry any
+  // Paperclip-qualified OpenCode release (the runner accepts the V1 and V2
+  // window), so an installed binary from that set satisfies the check without
+  // weakening the pack's digest and contract verification above.
+  const acceptedOpenCodeVersions = new Set<string>([
+    manifest.payload.pins.opencode,
+    ...QUALIFIED_OPENCODE_RUNNER_VERSIONS,
+  ]);
+  if (!acceptedOpenCodeVersions.has(opencodeVersion.stdout.trim())) {
     throw new Error(
       "runner_remote_provider_artifact_incompatible: OpenCode version mismatch",
     );
