@@ -73,6 +73,7 @@ import {
   resetAgentSessionSchema,
   agentSkillSyncSchema,
   testAdapterEnvironmentSchema,
+  probeAdapterModelSchema,
   qualifyAgentRunnerSchema,
   // Issue
   createIssueSchema,
@@ -4127,9 +4128,23 @@ registry.registerPath({
         .optional(),
       environmentId: z.string().optional(),
       refresh: z.string().optional(),
+      agentId: z.string().optional(),
     }),
   },
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/agents/{agentId}/model-probe",
+  tags: ["adapters"],
+  summary: "Ask one saved agent's own runtime whether a model answers",
+  description: "Sends one tiny turn to the model on that agent's OpenCode gateway server. Catalogs can outlive a retired model; a live turn cannot.",
+  request: {
+    params: z.object({ companyId: z.string(), agentId: z.string() }),
+    body: jsonBody(probeAdapterModelSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({

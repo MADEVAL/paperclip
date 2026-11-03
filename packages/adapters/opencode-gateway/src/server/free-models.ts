@@ -31,7 +31,20 @@ const ZERO_COST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const FALLBACK_TTL_MS = 60_000;
 
 /** Free models that do NOT carry the `-free` suffix (stealth releases). */
-export const KNOWN_FREE_MODEL_IDS = new Set(["big-pickle", "grok-code"]);
+export const KNOWN_FREE_MODEL_IDS = new Set(["grok-code"]);
+
+/**
+ * Kill-switch for ids a provider retired while its catalogs keep advertising
+ * them. Live model probes are authoritative: add an id here only after
+ * `probeOpenCodeGatewayModel` (or the local CLI probe) fails for it, and remove
+ * it once a probe answers again. Empty by default: every known source currently
+ * answers for `big-pickle`.
+ */
+export const RETIRED_OPENCODE_MODEL_IDS = new Set<string>();
+
+export function isRetiredOpenCodeModelId(modelId: string): boolean {
+  return RETIRED_OPENCODE_MODEL_IDS.has(modelId.trim().toLowerCase());
+}
 
 export type OpenCodeModelProvider = "opencode" | "opencode-go";
 
@@ -106,6 +119,7 @@ export function parseModelCatalog(
   for (const entry of data) {
     const modelId = nonEmpty(asRecord(entry)?.id);
     if (!modelId) continue;
+    if (isRetiredOpenCodeModelId(modelId)) continue;
     const id = `${provider}/${modelId}`;
     if (seen.has(id)) continue;
     seen.add(id);
@@ -125,7 +139,6 @@ export function parseModelCatalog(
  * and limited to free models so the dropdown is still useful offline.
  */
 export const FALLBACK_OPENCODE_MODELS: OpenCodeCatalogModel[] = [
-  "opencode/big-pickle",
   "opencode/beam-free",
   "opencode/mimo-v2.6-flash-free",
   "opencode/nemotron-3.5-super-vl-free",

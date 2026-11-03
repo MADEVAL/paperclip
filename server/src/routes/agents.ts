@@ -51,6 +51,7 @@ import { getExecutionBlocker } from "../services/execution-blocker.js";
 import { canRetryStoppedRun } from "../services/cancelled-native-startup.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext, type NativeReviewAssignmentContext } from "../services/native-runtime/native-review-participant.js";
 import { paperclipRunnerTransitionConfig, normalizeLegacyRunnerProvider, isPaperclipRunnerProvider, PAPERCLIP_RUNNER_ACPX_PROFILES } from "@paperclipai/adapter-utils";
+import { listOpenCodeGatewayAgentModels, probeOpenCodeGatewayModel } from "@paperclipai/adapter-opencode-gateway/server";
 import { applyMcpReasoningEffort } from "../services/public-mcp/agent-config.js";
 import { executionProjectionForRun, executionProjectionsForRuns } from "../services/execution-projection.js";
 import { selectDashboardRunIds } from "../services/dashboard-run-selection.js";
@@ -77,6 +78,7 @@ import {
   normalizeIssueIdentifier,
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
+  probeAdapterModelSchema,
   qualifyAgentRunnerSchema,
   type AgentDesiredSkillEntry,
   type AgentSkillAssignmentMode,
@@ -3047,10 +3049,47 @@ export function agentRoutes(
     }
   });
 
+  async function resolveAgentRuntimeAdapterConfig(
+    req: Request,
+    companyId: string,
+    agent: { id: string; adapterType: string; adapterConfig: Record<string, unknown> },
+  ): Promise<Record<string, unknown>> {
+    const normalized = await secretsSvc.normalizeAdapterConfigForPersistence(
+      companyId,
+      agent.adapterConfig,
+      { strictMode: strictSecretsMode, adapterType: agent.adapterType },
+    );
+    const { config } = await secretsSvc.resolveAdapterConfigForRuntime(
+      companyId,
+      normalized,
+      buildActorSecretContext(req, { consumerType: "agent", consumerId: agent.id }),
+      { adapterType: agent.adapterType, userSecretMediation: "owner_scoped" },
+    );
+    return config;
+  }
+
   router.get("/companies/:companyId/adapters/:type/models", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const type = assertKnownAdapterType(req.params.type as string);
+    // A gateway agent owns its provider catalog. When the caller identifies the
+    // agent, ask that agent's own OpenCode server (`GET /api/model`) instead of
+    // the public Zen/Go lists, so the picker matches the models it can use.
+    const gatewayAgentId = asNonEmptyString(req.query.agentId);
+    if (type === "opencode_gateway" && gatewayAgentId) {
+      const agent = await getAccessibleResource(req, res, svc.getById(gatewayAgentId), "Agent not found");
+      if (!agent) return;
+      if (agent.companyId !== companyId) throw notFound("Agent not found");
+      await assertCanUpdateAgent(req, agent);
+      try {
+        const config = await resolveAgentRuntimeAdapterConfig(req, companyId, agent);
+        const { models: agentModels } = await listOpenCodeGatewayAgentModels({ config });
+        res.json(agentModels);
+        return;
+      } catch {
+        // The agent server can be offline; fall back to the public catalog.
+      }
+    }
     const pendingAcpxProfile = type === "paperclip_runner" && req.query.provider === "acpx"
       ? PAPERCLIP_RUNNER_ACPX_PROFILES.find(profile => profile.value === req.query.acpxAgent && !profile.qualified)
       : undefined;
@@ -3163,6 +3202,26 @@ export function agentRoutes(
       ? models.filter(model => model.id !== "grok-build")
       : models);
   });
+
+  router.post(
+    "/companies/:companyId/agents/:agentId/model-probe",
+    validate(probeAdapterModelSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      const agent = await getAccessibleResource(req, res, svc.getById(req.params.agentId as string), "Agent not found");
+      if (!agent) return;
+      if (agent.companyId !== companyId) throw notFound("Agent not found");
+      await assertCanUpdateAgent(req, agent);
+      if (agent.adapterType !== "opencode_gateway") {
+        throw unprocessable("Model probes are supported for OpenCode gateway agents", { code: "model_probe_unsupported" });
+      }
+      const config = await resolveAgentRuntimeAdapterConfig(req, companyId, agent);
+      const result = await probeOpenCodeGatewayModel({ config, model: req.body.model });
+      res.json({ adapterType: agent.adapterType, model: req.body.model, ...result });
+    },
+  );
 
   router.get("/companies/:companyId/adapters/:type/detect-model", async (req, res) => {
     const companyId = req.params.companyId as string;

@@ -1080,6 +1080,26 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   }, [accountModelScope, selectedCompanyId, isExternalRunner, connectionModels, refreshConnectionModels]);
   const [refreshModelsError, setRefreshModelsError] = useState<string | null>(null);
   const [refreshingModels, setRefreshingModels] = useState(false);
+  const [modelProbePending, setModelProbePending] = useState(false);
+  const [modelProbeResult, setModelProbeResult] = useState<{ ok: boolean; message: string } | null>(null);
+  async function handleProbeModel() {
+    if (!selectedCompanyId || isCreate || !currentModelId || modelProbePending) return;
+    setModelProbePending(true);
+    setModelProbeResult(null);
+    try {
+      const result = await agentsApi.probeModel(selectedCompanyId, props.agent.id, currentModelId);
+      setModelProbeResult({
+        ok: result.ok,
+        message: result.ok
+          ? `Answered in ${result.latencyMs} ms: ${result.message}`
+          : `${result.code ?? "probe_failed"}: ${result.message}`,
+      });
+    } catch (error) {
+      setModelProbeResult({ ok: false, message: error instanceof Error ? error.message : "Model probe failed" });
+    } finally {
+      setModelProbePending(false);
+    }
+  }
   const models = connectionModels?.models ?? fetchedModels ?? externalModels ?? [];
   const modelError = connectionModels ? connectionModels.error : fetchedModelsError;
   const adapterCommandField = "command";
@@ -2016,6 +2036,24 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       ? modelError.message
                       : "Failed to load adapter models.")}
                 </p>
+              )}
+              {adapterType === "opencode_gateway" && !isCreate && (
+                <div className="space-y-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={modelProbePending || !currentModelId || !selectedCompanyId}
+                    onClick={() => void handleProbeModel()}
+                  >
+                    {modelProbePending ? "Checking model…" : "Check model"}
+                  </Button>
+                  {modelProbeResult && (
+                    <p className={modelProbeResult.ok ? "text-xs text-muted-foreground" : "text-xs text-destructive"}>
+                      {modelProbeResult.message}
+                    </p>
+                  )}
+                </div>
               )}
               {adapterType === "opencode_local"
                 && !connectionModels

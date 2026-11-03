@@ -1903,6 +1903,8 @@ export {
   wakeAgentSchema,
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
+  probeAdapterModelSchema,
+  type ProbeAdapterModel,
   qualifyAgentRunnerSchema,
   agentPermissionsSchema,
   updateAgentPermissionsSchema,

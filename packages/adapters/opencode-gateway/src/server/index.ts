@@ -3,6 +3,12 @@ export { testEnvironment } from "./test.js";
 export { getConfigSchema } from "./config-schema.js";
 export { listOpenCodeGatewayModels } from "./models.js";
 export {
+  listOpenCodeGatewayAgentModels,
+  parseOpenCodeAgentModels,
+  probeOpenCodeGatewayModel,
+  readOpenCodeAssistantReply,
+} from "./agent-models.js";
+export {
   parseModelCatalog,
   isFreeModelId,
   buildModelFieldOptions,

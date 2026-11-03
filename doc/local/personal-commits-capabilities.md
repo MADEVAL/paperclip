@@ -164,6 +164,7 @@
 
 - `4f3b553be` · 2026-11-03 — миграции приведены к merged-схеме: собственные `0334-0338` перенумерованы в `0423-0427`, снапшоты пересобраны от upstream-снимка, CHECK провайдеров расширен до `github`+`deepseek`+`typesafe`, дефолт CAVEMAN выровнен на общую константу (дрейф схемы устранён).
 - `67808743a` · 2026-11-03 — проверка удалённого провайдер-пака принимает любую квалифицированную версию OpenCode из `QUALIFIED_OPENCODE_RUNNER_VERSIONS` (V1 и V2), а не только точный пин манифеста; digest/contract-проверки пака не ослаблены.
+- *(этот коммит)* · 2026-11-03 — модели OpenCode спрашиваются у самого агента (`GET /api/model`: `status`/`enabled`/cost/variants, с фолбэком на публичный каталог), добавлен kill-switch `RETIRED_OPENCODE_MODEL_IDS` для id, чью смерть подтвердил probe, и живая проверка модели `POST /api/companies/{companyId}/agents/{agentId}/model-probe` с кнопкой «Check model» в форме агента. `big-pickle` из hardcode/фолбэка убран; проверка показала, что он живой, поэтому в kill-switch не внесён.
 
 ---
 

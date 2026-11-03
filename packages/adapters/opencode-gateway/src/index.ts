@@ -63,7 +63,7 @@ Required fields:
   defaults to 4096. Paperclip does not launch this server. A non-loopback
   http:// URL is rejected unless dangerouslyAllowInsecureRemoteHttp is true.
 - model (string): OpenCode model id in provider/model form, for example
-  opencode/big-pickle (free) or anthropic/claude-sonnet-4-5. The gateway owns
+  opencode/deepseek-v4.1-flash-free or anthropic/claude-sonnet-4-5. The gateway owns
   the provider catalog; the model works only if the gateway host has that
   provider connected.
 

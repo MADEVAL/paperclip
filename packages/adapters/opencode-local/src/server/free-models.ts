@@ -9,8 +9,8 @@ import type { AdapterModel } from "@paperclipai/adapter-utils";
  * dropdown shows them with a `(free)` label.
  *
  * Free detection uses the public catalog id suffix plus the zero-cost entries in
- * the `models.dev` catalog. The suffix alone misses stealth releases such as
- * `big-pickle`; the cost lookup catches new free models without a `-free` id.
+ * the `models.dev` catalog. The suffix alone misses stealth releases without a
+ * recognizable id; the cost lookup catches new free models without a `-free` id.
  * If `models.dev` is unavailable we fall back to the suffix and the small
  * hard-coded stealth set.
  *
@@ -35,7 +35,20 @@ const ZERO_COST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const FALLBACK_TTL_MS = 60_000;
 
 /** Free models that do NOT carry the `-free` suffix (stealth releases). */
-export const KNOWN_FREE_MODEL_IDS = new Set(["big-pickle", "grok-code"]);
+export const KNOWN_FREE_MODEL_IDS = new Set(["grok-code"]);
+
+/**
+ * Kill-switch for ids a provider retired while its catalogs keep advertising
+ * them. Live model probes are authoritative: add an id here only after
+ * `probeOpenCodeGatewayModel` (or the local CLI probe) fails for it, and remove
+ * it once a probe answers again. Empty by default: every known source currently
+ * answers for `big-pickle`.
+ */
+export const RETIRED_OPENCODE_MODEL_IDS = new Set<string>();
+
+export function isRetiredOpenCodeModelId(modelId: string): boolean {
+  return RETIRED_OPENCODE_MODEL_IDS.has(modelId.trim().toLowerCase());
+}
 
 type Provider = "opencode" | "opencode-go";
 
@@ -105,6 +118,7 @@ export function parseFreeModelCatalog(
   for (const entry of data) {
     const modelId = nonEmpty(asRecord(entry)?.id);
     if (!modelId || !isFreeOpenCodeModelId(modelId, zeroCostIds)) continue;
+    if (isRetiredOpenCodeModelId(modelId)) continue;
     const id = `${provider}/${modelId}`;
     if (seen.has(id)) continue;
     seen.add(id);
@@ -115,7 +129,6 @@ export function parseFreeModelCatalog(
 
 /** Baked-in fallback so the free models still show when the catalog fetch fails. */
 export const FALLBACK_OPENCODE_FREE_MODELS: AdapterModel[] = [
-  "opencode/big-pickle",
   "opencode/beam-free",
   "opencode/mimo-v2.6-flash-free",
   "opencode/nemotron-3.5-super-vl-free",
@@ -242,6 +255,7 @@ export function mergeFreeModels(
   const merged: AdapterModel[] = [];
   for (const model of discovered) {
     const modelId = model.id.includes("/") ? model.id.slice(model.id.indexOf("/") + 1) : model.id;
+    if (isRetiredOpenCodeModelId(modelId)) continue;
     const free = isFreeOpenCodeModelId(modelId, zeroCostIds);
     const label = free && !model.label.includes("(free)") ? `${model.label} (free)` : model.label;
     if (seen.has(model.id)) continue;

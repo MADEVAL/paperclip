@@ -83,7 +83,7 @@ export async function getConfigSchema(deps: ConfigSchemaDeps = {}): Promise<Adap
         type: "combobox",
         required: true,
         options: modelOptions,
-        hint: "OpenCode model id in `provider/model` form, for example `opencode/big-pickle` (free) or `anthropic/claude-sonnet-4-5`. The list is loaded from the OpenCode Zen and Go catalogs; entries ending in (free) cost nothing. You can also type any provider/model. The model works only if the gateway host has that provider connected.",
+        hint: "OpenCode model id in `provider/model` form, for example `opencode/deepseek-v4.1-flash-free` (free) or `anthropic/claude-sonnet-4-5`. The list is loaded from the OpenCode Zen and Go catalogs; entries ending in (free) cost nothing. You can also type any provider/model. The model works only if the gateway host has that provider connected.",
       },
       {
         key: "agent",

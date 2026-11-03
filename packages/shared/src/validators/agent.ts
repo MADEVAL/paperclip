@@ -315,6 +315,16 @@ export const testAdapterEnvironmentSchema = z.object({
 
 export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema>;
 
+/**
+ * Ask one saved agent's own runtime whether a model really answers. The probe
+ * sends one tiny turn; catalogs can outlive a retired model, a live turn cannot.
+ */
+export const probeAdapterModelSchema = z.object({
+  model: z.string().trim().min(3).max(300),
+});
+
+export type ProbeAdapterModel = z.infer<typeof probeAdapterModelSchema>;
+
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
   canCreateSkills: z.boolean().optional(),

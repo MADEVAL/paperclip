@@ -1199,13 +1199,13 @@ describe("New agent setup", () => {
       expect(container.textContent).toContain("Session key strategy");
       await fill("OpenCode server URL", "http://127.0.0.1:4096");
       await fill("OpenCode server password", "server-pass");
-      await fill("Model", "opencode/big-pickle");
+      await fill("Model", "opencode/deepseek-v4.1-flash-free");
       await click("Finish setup");
       expect(api.hire).toHaveBeenCalledTimes(1);
       expect(api.hire.mock.calls[0][1].adapterConfig).toMatchObject({
         apiBaseUrl: "http://127.0.0.1:4096",
         password: "server-pass",
-        model: "opencode/big-pickle",
+        model: "opencode/deepseek-v4.1-flash-free",
         username: "opencode",
         version: "auto",
         sessionKeyStrategy: "issue",

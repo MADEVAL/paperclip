@@ -129,7 +129,7 @@ Sources:
 - OpenCode Go: `https://opencode.ai/zen/go/v1/models` → `opencode-go/<id>`
 - `https://models.dev/api.json` for zero-cost metadata.
 
-Free models are labelled `(free)` using the `-free` suffix, the `big-pickle` /
+Free models are labelled `(free)` using the `-free` suffix, the `grok-code` /
 `grok-code` stealth ids, and `models.dev` entries whose input and output cost is
 zero. A new stealth free model therefore does not need a Paperclip release.
 

@@ -40,14 +40,14 @@ describe("opencode_gateway package exports", () => {
   it("getConfigSchema requires apiBaseUrl and model, and offers the free-model combobox", async () => {
     const schema = await getConfigSchema({
       loadCatalog: async () => [
-        { id: "opencode/big-pickle", provider: "opencode", providerLabel: "OpenCode Zen", modelId: "big-pickle", free: true },
+        { id: "opencode/grok-code", provider: "opencode", providerLabel: "OpenCode Zen", modelId: "grok-code", free: true },
       ],
     });
     const byKey = new Map(schema.fields.map((field) => [field.key, field]));
     expect(byKey.get("apiBaseUrl")?.required).toBe(true);
     expect(byKey.get("model")?.required).toBe(true);
     expect(byKey.get("model")?.type).toBe("combobox");
-    expect(byKey.get("model")?.options?.some((option) => option.value === "opencode/big-pickle")).toBe(true);
+    expect(byKey.get("model")?.options?.some((option) => option.value === "opencode/grok-code")).toBe(true);
     expect(byKey.get("password")?.required).not.toBe(true);
     expect(byKey.get("password")?.meta?.secret).toBe(true);
     expect(byKey.get("allowNoAuth")?.type).toBe("toggle");

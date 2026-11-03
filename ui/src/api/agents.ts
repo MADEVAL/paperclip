@@ -256,6 +256,19 @@ export const agentsApi = {
       `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models${query}`,
     );
   },
+  probeModel: (companyId: string, agentId: string, model: string) =>
+    api.post<{
+      adapterType: string;
+      model: string;
+      ok: boolean;
+      code: string | null;
+      message: string;
+      latencyMs: number;
+      sessionId: string | null;
+    }>(
+      `/companies/${encodeURIComponent(companyId)}/agents/${encodeURIComponent(agentId)}/model-probe`,
+      { model },
+    ),
   detectModel: (companyId: string, type: string) =>
     api.get<DetectedAdapterModel | null>(
       `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/detect-model`,
