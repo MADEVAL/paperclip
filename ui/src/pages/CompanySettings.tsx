@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useState } from "react";
+import { AgentObservabilitySettingsSection } from "../components/observability/AgentObservabilitySettings";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -45,7 +46,6 @@ export function CompanySettings() {
   const navigate = useNavigate();
   const toastActions = useOptionalToastActions();
   const cloud = useCloudInstance();
-  const fastResponses = useFastResponsesEnabled();
   // Managed instances derive the task ID prefix from the company name, so a
   // rename here also renumbers the existing task IDs.
   const isCloudManaged = Boolean(cloud);
@@ -441,9 +441,7 @@ export function CompanySettings() {
         }
       />
 
-      {fastResponses.loaded && !fastResponses.enabled && (
-        <DecisionModelSettingsSection key={selectedCompanyId} companyId={selectedCompanyId!} />
-      )}
+      <AgentObservabilitySettingsSection companyId={selectedCompanyId!} />
 
       {selectedCompanyId && <TypesafePurposesCompanySection key={`typesafe-${selectedCompanyId}`} companyId={selectedCompanyId} />}
 

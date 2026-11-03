@@ -3,6 +3,7 @@ import type { TypesafeAskResult } from "@paperclipai/shared";
 
 const BASE_URL = "https://api.typesafe.ai/v1";
 export const TYPESAFE_GALLERY_KEY = "typesafe";
+export const TYPESAFE_HEALTH_MESSAGE = "TypeSafe API key is connected.";
 
 // The generic connect flow stores the catalog slug, never a provider name.
 export function isTypesafeConnection(connection: {

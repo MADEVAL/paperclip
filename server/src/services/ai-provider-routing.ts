@@ -1,3 +1,4 @@
+import { OPENROUTER_ATTRIBUTION_HEADERS, isOpenRouterUrl, openRouterClaudeHeaders, openRouterCodexHeaders } from "@paperclipai/shared/openrouter-attribution";
 import {
   aiRoutingBaseUrl,
   aiRoutingModel,
@@ -18,6 +19,7 @@ export function managedProviderRouting(
   let codexConfig = "";
   let hermesConfig = "";
   const baseUrl = aiRoutingBaseUrl(route, harness);
+  const openrouter = isOpenRouterUrl(baseUrl);
   if (route.kind === "bedrock") {
     env.CLAUDE_CODE_USE_BEDROCK = "1";
     env.AWS_REGION = route.region!;
@@ -36,6 +38,7 @@ export function managedProviderRouting(
       // to keep the default setup path working.
       config.model = model.toLowerCase().includes("deepseek") ? model : "deepseek-flash";
     }
+    if (openrouter) codexConfig += openRouterCodexHeaders();
   } else if (harness === "claude_local") {
     // DeepSeek's Claude Code integration uses the `[1m]` window suffix on the
     // primary models only (not the haiku/subagent aliases).
@@ -43,6 +46,7 @@ export function managedProviderRouting(
       ? "deepseek-flash[1m]"
       : model;
     env.ANTHROPIC_BASE_URL = baseUrl;
+    if (openrouter) env.ANTHROPIC_CUSTOM_HEADERS = openRouterClaudeHeaders();
     env[
       route.auth === "api_key" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN"
     ] = credential;
@@ -62,6 +66,9 @@ export function managedProviderRouting(
     }
     const claudeLevel = route.kind === "deepseek" ? deepseekReasoningEffort(effort) : undefined;
     if (claudeLevel) env.CLAUDE_CODE_EFFORT_LEVEL = claudeLevel;
+  } else if (harness === "pi_local" && route.kind === "openrouter") {
+    env.OPENROUTER_API_KEY = credential;
+    config.model = aiRoutingModel(route, harness, model);
   } else if (harness === "opencode_local") {
     const provider = route.kind === "openrouter" ? "openrouter" : "paperclip";
     if (route.kind === "openrouter") env.OPENROUTER_API_KEY = credential;
@@ -91,7 +98,7 @@ export function managedProviderRouting(
           ...(provider === "paperclip"
             ? { npm: "@ai-sdk/openai-compatible", name: "Paperclip connection" }
             : {}),
-          options: { baseURL: baseUrl, apiKey: credential },
+          options: { baseURL: baseUrl, apiKey: credential, ...(openrouter ? { headers: OPENROUTER_ATTRIBUTION_HEADERS } : {}) },
           models: id ? { [id]: { name: id } } : {},
         },
       },
@@ -112,5 +119,6 @@ export function managedProviderRouting(
     // would expose the reusable gateway key to task-controlled shell commands.
     hermesConfig = `model:\n  provider: ${route.kind === "openrouter" ? '"openrouter"' : '"custom"'}\n  default: ${JSON.stringify(model)}\n  base_url: ${JSON.stringify(baseUrl)}\n  api_mode: "chat_completions"\n${route.auth === "none" ? "" : '  api_key: "${OPENAI_API_KEY}"\n'}`;
   }
+  if (openrouter && hermesConfig) hermesConfig += `  default_headers: ${JSON.stringify(OPENROUTER_ATTRIBUTION_HEADERS)}\n`;
   return { env, config, codexConfig, hermesConfig };
 }

@@ -579,6 +579,8 @@ test("Runner eval workflows pin actions and gate paid live execution", () => {
     readWorkflow("runner-full-stack-e2e.yml"),
     readWorkflow("e2e.yml"),
     readWorkflow("runner-protocol-live-evals.yml"),
+    readWorkflow("chat-catalog-testops.yml"),
+    readWorkflow("chat-catalog-testops-case.yml"),
   ];
 
   for (const workflow of actionPinWorkflows) {
@@ -618,6 +620,8 @@ test("Runner eval workflows pin actions and gate paid live execution", () => {
     "runner-full-stack-e2e.yml",
     "runner-live-evals.yml",
     "runner-protocol-live-evals.yml",
+    "chat-catalog-testops.yml",
+    "chat-catalog-testops-case.yml",
   ];
   const paidWorkflowNameSet = new Set(paidWorkflowNames);
   const providerSecretReference =
@@ -636,6 +640,79 @@ test("Runner eval workflows pin actions and gate paid live execution", () => {
   for (const name of paidWorkflowNames) {
     const workflow = readWorkflow(name);
     const triggerHeader = workflow.slice(0, workflow.indexOf("\njobs:\n"));
+    if (name === "chat-catalog-testops.yml") {
+      assert.match(triggerHeader, /^  workflow_dispatch:/m);
+      assert.doesNotMatch(triggerHeader, /^  (?:push|pull_request|workflow_call|workflow_run):/m);
+      const callerBlocks = ["chat", "chat_external"].map(id => workflow.split(`  ${id}:\n`)[1].split(/\n  [a-z_]+:\n/)[0]);
+      assert.doesNotMatch(callerBlocks.reduce((rest, block) => rest.replace(block, ""), workflow), providerSecretReference);
+      assert.match(workflow, /group: chat-catalog-testops-streaming-v1/);
+      for (const id of ["chat", "chat_external"]) {
+        const block = workflow.split(`  ${id}:\n`)[1].split(/\n  [a-z_]+:\n/)[0];
+        const assertCaller = block => {
+        assert.match(block, /if: needs\.authorize\.outputs\.operation == 'evaluate'/);
+        assert.ok(block.includes(`needs.select.outputs.${id === "chat" ? "native" : "external"}_count != '0'`));
+        assert.match(block, /needs: \[authorize, select, build\]/);
+        assert.match(block, /uses: \.\/\.github\/workflows\/chat-catalog-testops-case\.yml/);
+        assert.match(block, /protocol: streaming-v1/);
+        const mapping = block.split("\n    secrets:\n");
+        assert.equal(mapping.length, 2);
+        assert.deepEqual(mapping[1].trim().split("\n").map(line => line.trim()), [
+          "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}",
+          "ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}",
+          "ALLURE_TOKEN: ${{ secrets.ALLURE_TOKEN }}",
+        ]);
+        assert.doesNotMatch(block, /secrets: inherit/);
+        assert.match(block, /fail-fast: false/);
+        };
+        assertCaller(block);
+        const lane = id === "chat" ? "native" : "external";
+        for (const mutant of [block.replace("needs.authorize.outputs.operation == 'evaluate' && ", ""),
+          block.replace(`needs.select.outputs.${lane}_count != '0'`, 'true'),
+          block.replace('${{ secrets.OPENROUTER_API_KEY }}', "''"),
+          block + '\n      EXTRA: ${{ secrets.EXTRA }}',
+          block.replace(/\n    secrets:[\s\S]*/, '\n    secrets: inherit')]) assert.throws(() => assertCaller(mutant));
+      }
+      const final = workflow.split("  verify:\n")[1];
+      assert.match(final, /chat-completion-testops-cli\.mjs verify-stream/);
+      assert.doesNotMatch(final, /allurectl|cli\.mjs upload(?: |$)/);
+      continue;
+    }
+    if (name === "chat-catalog-testops-case.yml") {
+      assert.match(triggerHeader, /^  workflow_call:/m);
+      assert.doesNotMatch(triggerHeader, /^  (?:push|pull_request|workflow_dispatch|workflow_run):/m);
+      const chat = workflow.split("  chat:\n")[1].split("\n  report:\n")[0];
+      const report = workflow.split("  report:\n")[1].split("\n  upload:\n")[0];
+      const upload = workflow.split("  upload:\n")[1];
+      const boundary = value => {
+        assert.match(value, /environment: runner-e2e-private-paid/);
+        assert.match(value, /CHAT_TESTOPS_PROTOCOL: \$\{\{ inputs\.protocol \}\}/);
+        assert.match(value, /test "\$CHAT_TESTOPS_PROTOCOL" = streaming-v1/);
+        assert.match(value, /chat-completion-testops-cli\.mjs guard/);
+        assert.match(value, /chat-completion-testops-cli\.mjs verify-selection/);
+        assert.match(value, /--max-parallel 1 --max-automatic-retries 0/);
+        assert.match(value, /PAPERCLIP_CHAT_COMPLETION_TESTOPS: v1/);
+        assert.doesNotMatch(value, /ALLURE_TOKEN/);
+        assert.equal([...value.matchAll(providerSecretReference)].length, 2);
+        assert.ok(value.indexOf("chat-completion-testops-cli.mjs verify-selection") < value.search(providerSecretReference));
+      };
+      boundary(chat);
+      for (const mutant of [chat.replace("environment: runner-e2e-private-paid", "environment: unprotected"),
+        chat.replace("cli.mjs verify-selection", "cli.mjs unverified-selection"), chat + "\n ALLURE_TOKEN: leaked"]) {
+        assert.throws(() => boundary(mutant));
+      }
+      assert.match(report, /needs: chat/); assert.match(report, /always\(\) && !cancelled\(\)/);
+      assert.match(report, /environment: runner-e2e-private-history/);
+      assert.doesNotMatch(report, /secrets\./);
+      assert.match(report, /manual-private-transfer\.ts download-cell/);
+      assert.match(report, /cli\.mjs prepare-case-upload/);
+      assert.match(upload, /needs: report/); assert.match(upload, /always\(\) && !cancelled\(\)/);
+      assert.match(upload, /environment: runner-e2e-testops-reporting/);
+      assert.doesNotMatch(upload, /configure-aws-credentials|manual-private-transfer|secrets\.(?:OPENROUTER|ANTHROPIC)/);
+      assert.match(upload, /ALLURE_TOKEN: \$\{\{ secrets\.ALLURE_TOKEN \}\}/);
+      assert.match(upload, /cli\.mjs upload-case/);
+      assert.doesNotMatch(upload, /allurectl/);
+      continue;
+    }
     assert.doesNotMatch(
       triggerHeader,
       /^\s{2}(?:pull_request|pull_request_target|push|workflow_call|workflow_run):/m,
@@ -651,7 +728,11 @@ test("Runner eval workflows pin actions and gate paid live execution", () => {
     );
     assert.ok(providerJobs.length > 0, `${name} needs a provider-secret job`);
     for (const block of providerJobs) {
-      assert.match(block, /\n    environment:\n      name: runner-e2e-paid\n/);
+      if (name === "runner-protocol-live-evals.yml") {
+        assert.ok(block.includes("name: ${{ needs.authorize.outputs.accounting_mode == 'controlled' && 'runner-e2e-private-paid' || 'runner-e2e-paid' }}"));
+        assert.ok(block.includes("test '${{ needs.authorize.outputs.target_sha }}' = \"$GITHUB_SHA\""));
+        assert.ok(block.includes('test "$GITHUB_RUN_ATTEMPT" = 1'));
+      } else assert.match(block, /\n    environment:\n      name: runner-e2e-paid\n/);
       assert.match(
         block,
         /\n    steps:(?: &[A-Za-z0-9_-]+)?\n(?:\s*\n)*      - name: Reauthorize[^\n]*\n/,
@@ -698,8 +779,22 @@ test("Runner eval workflows pin actions and gate paid live execution", () => {
     const crons = [...workflow.matchAll(/cron:\s*"([^"]+)"/g)].map(
       (match) => match[1],
     );
-    assert.equal(crons.length, 1, `${name} must have one schedule`);
-    assert.match(crons[0], /^\d{1,2} \d{1,2} \* \* 0$/);
+    if (name === "runner-full-stack-e2e.yml") {
+      assert.deepEqual(crons, ["47 8 * * *", "47 9 * * 0"]);
+      assert.ok(workflow.includes("vars.RUNNER_FULL_STACK_E2E_NIGHTLY_ENABLED == 'true' && vars.RUNNER_FULL_STACK_E2E_OPERATIONS_ENABLED == 'true'"));
+      assert.ok(workflow.includes("Prepare bounded campaign before credentials"));
+      assert.ok(workflow.includes("--max-parallel 1 --max-automatic-retries 0"));
+      const catalog = workflow.slice(workflow.indexOf("  catalog:"), workflow.indexOf("  daytona_image:"));
+      assert.ok(catalog.includes("EVAL_OPERATING_OVERHEAD_JSON: ${{ vars.RUNNER_E2E_OPERATING_OVERHEAD_JSON }}"));
+      assert.ok(catalog.includes("operating_overhead: ${{ steps.catalog.outputs.operating_overhead }}"));
+      const prepare = workflow.slice(workflow.indexOf("      - name: Prepare bounded campaign before credentials"), workflow.indexOf("      - name: Run bounded campaign and retain feedback review"));
+      assert.ok(prepare.includes("EVAL_OPERATING_OVERHEAD_JSON: ${{ needs.catalog.outputs.operating_overhead }}"));
+      assert.ok(prepare.includes("EVAL_TEST_RUNNER: ${{ needs.authorize.outputs.test_runner }}"));
+      assert.ok(!prepare.includes("vars.RUNNER_E2E_OPERATING_OVERHEAD_JSON"));
+    } else {
+      assert.equal(crons.length, 1, `${name} must have one schedule`);
+      assert.match(crons[0], /^\d{1,2} \d{1,2} \* \* 0$/);
+    }
   }
 
   const chaosWorkflow = actionPinWorkflows[2];
@@ -825,6 +920,13 @@ test("release daemon production uses exact-source native hosts and no publisher 
 function nativeProducer() {
   return readWorkflow('release-verify.yml').split('  runner_binaries:\n')[1];
 }
+
+test('native provider packs and the image use the same exact Node version', () => {
+  const version = nativeProducer().match(/node-version: ([0-9.]+)/)?.[1];
+  assert.equal(version, '24.21.0');
+  const image = readFileSync(path.join(repoRoot, 'docker/daytona-runner/Dockerfile'), 'utf8');
+  assert.ok(image.includes(`FROM node:${version}-bookworm@sha256:`));
+});
 
 test('native dependency caches are target-bound and unmerged master callers cannot save them', () => {
   const producer = nativeProducer();

@@ -88,8 +88,10 @@ export function aiRoutingHarness(
   acpxAgent?: unknown,
 ): string {
   if (adapter !== "paperclip_runner") return adapter;
+  if (provider === "acpx" && acpxAgent === "copilot") return "copilot_runtime";
+  if (provider === "acpx" && acpxAgent === "antigravity") return "antigravity_runtime";
   const runner =
-    provider === "acpx" && (acpxAgent === "claude" || acpxAgent === "grok")
+    provider === "acpx" && ["claude", "grok", "pi"].includes(String(acpxAgent))
       ? acpxAgent
       : provider;
   return (
@@ -99,6 +101,7 @@ export function aiRoutingHarness(
         codex: "codex_local",
         opencode: "opencode_local",
         grok: "grok_local",
+        pi: "pi_local",
       } as Record<string, string>
     )[String(runner)] ?? "unsupported"
   );
@@ -113,6 +116,7 @@ export function isAiRoutingCompatible(
       "claude_local",
       "codex_local",
       "opencode_local",
+      "pi_local",
       "hermes_local",
     ].includes(harness);
   if (route.protocol === "responses") return harness === "codex_local";
@@ -132,13 +136,12 @@ export function aiRoutingBaseUrl(
   return (route.baseUrl ?? "").replace(/\/+$/, "");
 }
 
-/** OpenCode names models with a provider prefix; other harnesses use the raw ID. */
 export function aiRoutingModel(
   route: AiProviderRouting,
   harness: string,
   model: string,
 ): string {
-  if (!model || harness !== "opencode_local") return model;
+  if (!model || (harness !== "opencode_local" && !(harness === "pi_local" && route.kind === "openrouter"))) return model;
   const prefix = route.kind === "openrouter" ? "openrouter" : "paperclip";
   return model.startsWith(`${prefix}/`) ? model : `${prefix}/${model}`;
 }

@@ -2,6 +2,8 @@
 
 Product map: [Routines, schedules, and triggers](../feature-map/routines.md).
 
+Feature ID: `routines`.
+
 Review date: 2026-10-12. Source commit: `58e16dbddfc9c8d0cf60867f9d9847f0feda055b`.
 Native REST transport reconciled in this change; see the
 [shared transport contract](README.md#native-rest-transport).
@@ -12,6 +14,8 @@ qualified. No live agent execution is claimed. Follow the [map contract](../READ
 for format, permission checks, evidence and maintenance.
 
 ## `definition`
+
+Capability ID: `routines/definition`.
 
 Review: `baseline`.
 
@@ -40,6 +44,8 @@ issue or company default.
 
 ## `triggers`
 
+Capability ID: `routines/triggers`.
+
 Review: `baseline`.
 
 API: `present` — representative operation IDs:
@@ -65,6 +71,17 @@ Gaps: No dedicated production trigger-management binding; generic `call_api`
 provides the permitted REST path. Credential replies use inline delivery and encrypted
 mutation receipts rather than shared response assets.
 
+The public Sentry alert receiver is
+`POST /api/routine-triggers/public/{publicId}/sentry-run-failures`. Only an active
+bearer-authenticated webhook trigger admits work; it never adopts an ambient
+board or agent identity. Before dispatch, it checks company/run/task binding,
+the repair agent's source-read permission, public source visibility, and bounded
+parent/creation provenance. Self-generated repair failures are acknowledged with
+no task or wake. Run-based idempotency is scoped to the routine across triggers.
+The payload retains only source identifiers and bounded event/error identifiers.
+Deterministic service and assembled HTTP tests cover these boundaries; live Sentry
+delivery remains a separate acceptance step.
+
 The host-only `GET /api/instance/task-drain?idleSleepSafety=1&scheduledWake=1`
 extension reports the earliest supported future routine deadline under an owned
 idle hold. It requires signed Cloud control authority; company agents and tenant
@@ -74,6 +91,8 @@ and [route authorization tests](../../server/src/__tests__/instance-settings-rou
 These are local contract checks, not a live provider sleep/wake qualification.
 
 ## `run-now`
+
+Capability ID: `routines/run-now`.
 
 Review: `baseline`.
 
@@ -100,6 +119,8 @@ native authority requires a running bound run. A separate control binding remain
 
 ## `history`
 
+Capability ID: `routines/history`.
+
 Review: `baseline`.
 
 API: `present` — representative operation IDs:
@@ -124,6 +145,8 @@ Gaps: Runs are readable in company scope; configuration revision access checks r
 ownership for agents.
 
 ## `management`
+
+Capability ID: `routines/management`.
 
 Review: `baseline`.
 

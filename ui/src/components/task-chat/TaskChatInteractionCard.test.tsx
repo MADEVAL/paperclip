@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, forwardRef, useImperativeHandle, type ForwardedRef } from "react";
+import { act, forwardRef, useImperativeHandle, useState, type ForwardedRef } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,11 +13,16 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   expiredSecretProposalInteraction,
+  pendingToolActionLongProposalInteraction,
   pendingAskUserQuestionsInteraction,
   pendingRequestCheckboxConfirmationInteraction,
   pendingRequestItemVerdictsInteraction,
 } from "@/fixtures/issueThreadInteractionFixtures";
 import { TaskChatInteractionCard } from "./TaskChatInteractionCard";
+vi.mock("@/lib/router", async importOriginal => ({
+  ...await importOriginal<typeof import("@/lib/router")>(),
+  Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
+}));
 import { TaskChatThreadView } from "./TaskChatThreadView";
 import type { TaskChatInteractionItem } from "./task-chat-model";
 
@@ -51,6 +56,8 @@ vi.mock("@/components/MarkdownEditor", () => ({
     );
   }),
 }));
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function createRequestConfirmation(
   overrides: Partial<RequestConfirmationInteraction> = {},
@@ -112,6 +119,40 @@ describe("TaskChatInteractionCard", () => {
   afterEach(() => {
     flushSync(() => root.unmount());
     container.remove();
+  });
+
+  it("opens the real tool review and reveals the proposal tail before approval", async () => {
+    const accept = vi.fn();
+    const reject = vi.fn();
+    const interaction = structuredClone(pendingToolActionLongProposalInteraction);
+    function ReviewSurface() {
+      const [reviewing, setReviewing] = useState(false);
+      return <TaskChatInteractionCard item={interactionItem(interaction)}
+        presentation={reviewing ? "takeover" : "timeline"}
+        onReviewRequest={() => setReviewing(true)}
+        onAcceptInteraction={accept} onRejectInteraction={reject} />;
+    }
+    flushSync(() => root.render(<TooltipProvider><ThemeProvider><ReviewSurface /></ThemeProvider></TooltipProvider>));
+    expect(container.textContent).not.toContain("November 8, 2030");
+    await act(async () => {
+      Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Review request")!.click();
+    });
+    const details = container.querySelector("details")!;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    expect(container.querySelector("pre")?.textContent).toBe(interaction.payload.toolAction!.argumentsSummaryJson);
+    expect(details.textContent).toContain("November 8, 2030");
+    expect(details.textContent).toContain("[redacted]");
+    expect(details.textContent).toContain(interaction.payload.toolAction!.argumentsHash);
+    await act(async () => details.querySelector("summary")!.click());
+    expect(details.open).toBe(true);
+    expect(accept).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+    await act(async () => {
+      Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Approve & run")!.click();
+    });
+    expect(accept).toHaveBeenCalledExactlyOnceWith(interaction, undefined, undefined, false);
+    expect(reject).not.toHaveBeenCalled();
   });
 
   it("does not render a pending confirmation in the timeline", () => {
@@ -836,6 +877,31 @@ describe("TaskChatInteractionCard", () => {
     expect(submit).toHaveBeenCalledExactlyOnceWith(interaction, [{
       questionId: "draft", optionIds: [], otherText: mode === "canonical_text" ? edited : edited.trim(),
     }]);
+  });
+
+  it("opens a compact attachment item through the authenticated file endpoint", () => {
+    const interaction = { ...pendingRequestItemVerdictsInteraction, payload: { ...pendingRequestItemVerdictsInteraction.payload,
+      items: [{ id: "file", label: "Reviewed file", target: { type: "issue_attachment" as const, attachmentId: "immutable-file", assetId: "asset", sha256: "hash" } }],
+    } };
+    flushSync(() => root.render(<TooltipProvider><ThemeProvider><TaskChatInteractionCard item={interactionItem(interaction)} presentation="takeover" onSubmitInteractionVerdicts={() => undefined} /></ThemeProvider></TooltipProvider>));
+    expect(container.querySelector('a[href="/api/attachments/immutable-file/content"]')?.getAttribute("target")).toBe("_blank");
+  });
+
+  it.each([undefined, "/stale-display-link"])("opens a compact confirmation's bound attachment when href is %s", href => {
+    const interaction = createRequestConfirmation({ payload: { version: 1, prompt: "Review the attached copy", target: {
+      type: "issue_attachment", attachmentId: "immutable-file", assetId: "asset", sha256: "hash", href,
+    } } });
+    flushSync(() => root.render(<TooltipProvider><ThemeProvider><TaskChatInteractionCard item={interactionItem(interaction)} presentation="takeover" onAcceptInteraction={() => undefined} /></ThemeProvider></TooltipProvider>));
+    expect(container.querySelector('a[href="/api/attachments/immutable-file/content"]')?.getAttribute("target")).toBe("_blank");
+  });
+
+  it("opens the bound output revision from a compact review item", () => {
+    const interaction = { ...pendingRequestItemVerdictsInteraction, payload: { ...pendingRequestItemVerdictsInteraction.payload,
+      items: [{ id: "copy", label: "Reviewed copy", target: { type: "issue_document" as const, issueId: "owner", key: "copy", revisionId: "reviewed-v1" } }],
+    } };
+    flushSync(() => root.render(<TooltipProvider><ThemeProvider><TaskChatInteractionCard item={interactionItem(interaction)} presentation="takeover" onSubmitInteractionVerdicts={() => undefined} /></ThemeProvider></TooltipProvider>));
+    expect(container.querySelector('a[href*="document-copy&revision=reviewed-v1"]')?.getAttribute("href"))
+      .toBe(`/issues/owner#document-copy&revision=reviewed-v1&interaction=${interaction.id}`);
   });
 
   it("paginates item verdicts instead of expanding the whole review set", async () => {

@@ -1,3 +1,5 @@
+import { notifyStatusCardIssueChange } from "./status-card-notifications.js";
+import { notifyAttentionRetentionWork } from "./retention-work-notifications.js";
 import { and, eq } from "drizzle-orm";
 import { heartbeatRuns, issues, type Db } from "@paperclipai/db";
 import { setIssueTitleSchema, type SetIssueTitle } from "@paperclipai/shared";
@@ -8,6 +10,7 @@ import { issueReferenceService } from "./issue-references.js";
 type TitleActor = Pick<LogActivityInput, "actorType" | "actorId" | "agentId" | "runId" | "agentApiKeyId">;
 type TitleResult = { id: string; title: string; titleNeedsGeneration: boolean; changed: boolean };
 type TitleReceipt = { issueId: string; title: string; onlyIfProvisional: boolean; result: TitleResult };
+type TitleMutationResult = { result: TitleResult; publication: ActivityPublication | null };
 
 const MAX_TASK_TITLE_RECEIPTS_PER_RUN = 64;
 const NON_ASCII = /[^\x00-\x7F]/;
@@ -30,13 +33,16 @@ export function assertTitleEncodingIntact(previousTitle: string, nextTitle: stri
 }
 
 /** Caller owns the transaction and publishes the activity only after commit. */
+export function setIssueTitle(tx: Db, companyId: string, issueId: string, input: SetIssueTitle, actor: TitleActor): Promise<TitleMutationResult>;
+export function setIssueTitle(tx: Db, companyId: string, issueId: string, input: SetIssueTitle, actor: TitleActor, options: { receiptOnly: true }): Promise<TitleMutationResult | null>;
 export async function setIssueTitle(
   tx: Db,
   companyId: string,
   issueId: string,
   input: SetIssueTitle,
   actor: TitleActor,
-): Promise<{ result: TitleResult; publication: ActivityPublication | null }> {
+  options?: { receiptOnly: true },
+): Promise<TitleMutationResult | null> {
   const { title, onlyIfProvisional, idempotencyKey } = setIssueTitleSchema.parse(input);
   const predicate = and(eq(issues.id, issueId), eq(issues.companyId, companyId));
   const [issue] = await tx.select().from(issues).where(predicate).for("update");
@@ -66,10 +72,12 @@ export async function setIssueTitle(
   const prior = receiptKey ? receipts[receiptKey] : undefined;
   if (prior) {
     if (prior.issueId !== issueId || prior.title !== title || prior.onlyIfProvisional !== onlyIfProvisional) {
+      if (options?.receiptOnly) return null;
       throw conflict("Task title idempotency key was already used with different arguments");
     }
     return { result: prior.result, publication: null };
   }
+  if (options?.receiptOnly) return null;
   // Keep all accepted keys replayable, including after a user edit. Reject new
   // keys at the limit instead of evicting receipts and allowing writes to replay.
   if (receiptKey && Object.keys(receipts).length >= MAX_TASK_TITLE_RECEIPTS_PER_RUN) {
@@ -89,6 +97,8 @@ export async function setIssueTitle(
     return { result: await saveReceipt({ id: issue.id, title: issue.title, titleNeedsGeneration: issue.titleNeedsGeneration, changed: false }), publication: null };
   }
   assertTitleEncodingIntact(issue.title, title);
+  await notifyStatusCardIssueChange(tx, companyId);
+  await notifyAttentionRetentionWork(tx, { companyId });
   await tx.update(issues).set({ title, titleNeedsGeneration: false, updatedAt: new Date() }).where(predicate);
   await issueReferenceService(tx).syncIssue(issueId, tx);
   const { publication } = await persistActivity(tx, {

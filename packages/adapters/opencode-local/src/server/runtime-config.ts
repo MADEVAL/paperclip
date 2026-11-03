@@ -1,3 +1,4 @@
+import { isOpenRouterUrl, openRouterAttributionHeaders } from "@paperclipai/adapter-utils/openrouter-attribution";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +10,7 @@ import {
   PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_PACKAGE_JSON,
   PAPERCLIP_WINDOWS_UTF8_PLUGIN_V2_SOURCE,
 } from "./windows-utf8.js";
+import { installSandboxToolMemoryPreference } from "./sandbox-tool-memory.js";
 
 type PreparedOpenCodeRuntimeConfig = {
   env: Record<string, string>;
@@ -117,16 +119,10 @@ export async function prepareOpenCodeRuntimeConfig(input: {
   openCodeV2?: boolean;
   /** Platform override for tests; defaults to the running platform. */
   platform?: NodeJS.Platform;
+  sandboxToolOomPreference?: boolean;
 }): Promise<PreparedOpenCodeRuntimeConfig> {
   const platform = input.platform ?? process.platform;
   const skipPermissions = asBoolean(input.config.dangerouslySkipPermissions, true);
-  if (!skipPermissions) {
-    return {
-      env: input.env,
-      notes: [],
-      cleanup: async () => {},
-    };
-  }
 
   // For remote execution targets the host XDG_CONFIG_HOME path is meaningless
   // (and actively harmful — it leaks a macOS-only path into the remote Linux
@@ -162,7 +158,7 @@ export async function prepareOpenCodeRuntimeConfig(input: {
 
   const existingConfig = await readJsonObject(runtimeConfigPath);
   const notes = [
-    "Injected runtime OpenCode config with permission=allow for all tools and connections.",
+    skipPermissions ? "Injected runtime OpenCode config with permission=allow for all tools and connections." : "Prepared isolated OpenCode provider configuration.",
   ];
 
   // Merge gateway/custom provider definitions supplied via PAPERCLIP_OPENCODE_PROVIDERS
@@ -231,9 +227,21 @@ export async function prepareOpenCodeRuntimeConfig(input: {
     notes.push(
       "Injected runtime OpenCode V2 permissions allowing all actions and external-directory access.",
     );
-  } else {
+  } else if (skipPermissions) {
     nextConfig.permission = "allow";
   }
+  const inlineContent = input.env.OPENCODE_CONFIG_CONTENT ?? process.env.OPENCODE_CONFIG_CONTENT;
+  let inlineConfig: Record<string, unknown> | undefined;
+  if (inlineContent) {
+    try {
+      const parsed: unknown = JSON.parse(inlineContent);
+      if (isPlainObject(parsed)) inlineConfig = parsed;
+    } catch {
+      // OpenCode must still report invalid operator configuration.
+    }
+  }
+  nextProvider = attributeOpenCodeProviders(mergeConfigObjects(nextProvider,
+    isPlainObject(inlineConfig?.provider) ? inlineConfig.provider : {}));
   if (Object.keys(nextProvider).length > 0) {
     nextConfig.provider = nextProvider;
   }
@@ -290,11 +298,21 @@ export async function prepareOpenCodeRuntimeConfig(input: {
   }
 
   await fs.writeFile(runtimeConfigPath, `${JSON.stringify(nextConfig, null, 2)}\n`, "utf8");
+  if (input.sandboxToolOomPreference) {
+    try {
+      await installSandboxToolMemoryPreference(runtimeConfigDir);
+      notes.push("Prepared sandbox Bash tool memory preference; shell commands are preferred OOM victims over OpenCode.");
+    } catch {
+      notes.push("Could not prepare sandbox Bash tool memory preference; continuing with the existing shell behavior.");
+    }
+  }
 
   return {
     env: {
       ...input.env,
       XDG_CONFIG_HOME: runtimeConfigHome,
+      ...(inlineContent ? { OPENCODE_CONFIG_CONTENT: inlineConfig
+        ? JSON.stringify({ ...inlineConfig, provider: nextProvider }) : inlineContent } : {}),
     },
     notes,
     cleanup: async () => {
@@ -321,4 +339,29 @@ export function prepareManagedOpenCodeRemoteHomes(input: {
     XDG_CACHE_HOME: path.posix.join(home, "cache"),
     XDG_STATE_HOME: path.posix.join(home, "state"),
   });
+}
+
+/** Native provider defaults and per-model headers can both carry harness attribution. */
+function attributeOpenCodeProviders(providers: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { openrouter: {}, ...providers };
+  for (const [name, value] of Object.entries(result)) {
+    if (!isPlainObject(value)) continue;
+    const options = isPlainObject(value.options) ? value.options : {};
+    if (!isOpenRouterUrl(options.baseURL) && !(name === "openrouter" && options.baseURL === undefined)) continue;
+    const headers = isPlainObject(options.headers) ? options.headers as Record<string, string> : {};
+    const models = isPlainObject(value.models) ? Object.fromEntries(Object.entries(value.models).map(([id, model]) => [id,
+      isPlainObject(model) ? { ...model, headers: openRouterAttributionHeaders(isPlainObject(model.headers) ? model.headers as Record<string, string> : {}) } : model,
+    ])) : undefined;
+    result[name] = { ...value, options: { ...options, headers: openRouterAttributionHeaders(headers) }, ...(models ? { models } : {}) };
+  }
+  return result;
+}
+
+function mergeConfigObjects(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
+  const entries = Object.entries(override).map(([key, value]) => {
+    const previous = base[key];
+    return [key, isPlainObject(previous) && isPlainObject(value)
+      ? mergeConfigObjects(previous, value) : value];
+  });
+  return { ...base, ...Object.fromEntries(entries) };
 }

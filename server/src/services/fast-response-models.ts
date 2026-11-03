@@ -9,5 +9,5 @@ export function fastResponseCatalogModels(connection: Pick<AiConnectionMetadata,
   if (connection.routing) return connection.routing.models ?? [];
   // `deepseek` and `typesafe` (and any future provider) have no static adapter
   // catalog here; their models are resolved dynamically by their own services.
-  return { anthropic, openai, google, xai, openrouter: [], deepseek: [], typesafe: [] }[connection.provider] ?? [];
+  return { anthropic, openai, google, xai, openrouter: [], deepseek: [], typesafe: [], github: [] }[connection.provider] ?? [];
 }
