@@ -429,10 +429,10 @@ export async function testEnvironment(
       const args = ["run", "--format", "json"];
       // V2 folds the variant into the model ref and has no `--variant` flag.
       const openCodeV2 = usesOpenCodeV2Cli(openCodeCliVersion);
-      // The probe runs with the connection's projected provider env. Without
-      // `--standalone` the shared background service ignores that env and
-      // reports the projected model as unavailable.
-      if (openCodeV2 && (runtimeEnv.OPENCODE_CONFIG_CONTENT || runtimeEnv.OPENCODE_CONFIG)) {
+      // The probe must see the run's env and per-run config. Without
+      // `--standalone`, V2's shared background service keeps another process's
+      // env and reports the projected model as unavailable.
+      if (openCodeV2) {
         args.push("--standalone");
       }
       const probeModelArg =
@@ -443,6 +443,8 @@ export async function testEnvironment(
       // approves permission requests that would otherwise block the probe.
       if (asBoolean(config.dangerouslySkipPermissions, true)) args.push("--auto");
       if (extraArgs.length > 0) args.push(...extraArgs);
+      // V2 resolves its project root from PWD, not the spawned cwd.
+      const probeEnv = openCodeV2 ? { ...runtimeEnv, PWD: runtimeCwd } : runtimeEnv;
 
       // Sandbox bridges still add cold-start and transport overhead, but the
       // standard-2 Cloudflare tier now probes quickly enough that 90s keeps
@@ -460,7 +462,7 @@ export async function testEnvironment(
           args,
           {
             cwd: runtimeCwd,
-            env: runtimeEnv,
+            env: probeEnv,
             timeoutSec: helloProbeTimeoutSec,
             graceSec: 5,
             stdin: "Respond with hello.",
