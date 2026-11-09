@@ -1,3 +1,16 @@
+## This fork
+
+Personal fork of [paperclipai/paperclip](https://github.com/paperclipai/paperclip). `personal` is the main branch here; upstream `master` is merged in periodically and upstream behaviour is kept unless listed below.
+
+- **OpenCode V1 and V2** — version-aware CLI and runner support, the `opencode_gateway` adapter (HTTP/SSE), MCP wiring before the first session, output-preserving recovery, and a live model catalog per agent.
+- **DeepSeek** as a first-class provider — model catalog, routing, pricing, reasoning effort, and fast responses on the DeepSeek endpoint.
+- **TypeSafe/Jev** — connector, agent tool and skill, `typesafe ask` CLI command, governed calls, per-purpose toggles, and a direct decision-model provider.
+- **Decision models in product flows** — classify, dedupe, triage, plan, and acceptance gates with escalation to the board, guidance in task context, cost accounting, and fail-closed ownership checks.
+- **Harness login** — an agent can run on its own harness authentication without a managed AI connection.
+- **Company-wide agent instruction prefix**, with CAVEMAN ULTRA as the default for new companies.
+- **Windows and LAN fixes** — forced UTF-8 in agent shells, LF-stable migrations and bundled skills, titles that keep non-ASCII text, and UI identifiers that work without a secure context over plain HTTP.
+- **`doc/local/`** — upstream sync guide, GitHub token setup, and a per-commit capability registry for this fork.
+
 <p align="center">
   <img src="doc/assets/banner.jpg" alt="Paperclip is the app people use to manage AI agents for work." width="720" />
 </p>
